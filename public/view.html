@@ -68,7 +68,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 1000px;
+      min-width: 1100px;
     }
 
     th, td {
@@ -95,6 +95,45 @@
       padding: 20px;
       color: #bbb;
     }
+
+    .parent-row td {
+      background: #191919;
+      font-weight: 600;
+    }
+
+    .child-row td {
+      background: #141414;
+      color: #ccc;
+      font-size: 13px;
+    }
+
+    .child-row td:first-child {
+      padding-left: 28px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #2b2b2b;
+      font-size: 12px;
+      margin-left: 8px;
+      color: #ddd;
+    }
+
+    .toggle-btn {
+      background: transparent;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .toggle-btn:hover {
+      background: #2a2a2a;
+    }
   </style>
 </head>
 <body>
@@ -111,16 +150,16 @@
     <table id="visitsTable" style="display: none;">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>RID</th>
-          <th>Fecha</th>
           <th>IP</th>
+          <th>Fecha</th>
           <th>País</th>
           <th>Región</th>
           <th>Ciudad</th>
           <th>Latitud</th>
           <th>Longitud</th>
           <th>User-Agent</th>
+          <th>Total</th>
+          <th>Detalles</th>
         </tr>
       </thead>
       <tbody id="visitsTbody"></tbody>
@@ -136,6 +175,87 @@
     const table = document.getElementById('visitsTable');
     const tbody = document.getElementById('visitsTbody');
     const emptyState = document.getElementById('emptyState');
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function createParentRow(visit, index) {
+      const tr = document.createElement('tr');
+      tr.className = 'parent-row';
+
+      const childCount = Array.isArray(visit.children) ? visit.children.length : 0;
+      const hasChildren = childCount > 0;
+      const targetClass = `child-group-${index}`;
+
+      tr.innerHTML = `
+        <td>${escapeHtml(visit.ip || '')}</td>
+        <td>${escapeHtml(visit.created_at || '')}</td>
+        <td>${escapeHtml(visit.country || '')}</td>
+        <td>${escapeHtml(visit.region || '')}</td>
+        <td>${escapeHtml(visit.city || '')}</td>
+        <td>${escapeHtml(visit.latitude || '')}</td>
+        <td>${escapeHtml(visit.longitude || '')}</td>
+        <td>${escapeHtml(visit.user_agent || '')}</td>
+        <td>
+          ${escapeHtml(visit.count || 1)}
+          ${hasChildren ? `<span class="badge">${childCount} variaciones</span>` : ''}
+        </td>
+        <td>
+          ${
+            hasChildren
+              ? `<button class="toggle-btn" data-target="${targetClass}">Ver</button>`
+              : ''
+          }
+        </td>
+      `;
+
+      return tr;
+    }
+
+    function createChildRow(child, groupClass) {
+      const tr = document.createElement('tr');
+      tr.className = `child-row ${groupClass}`;
+      tr.style.display = 'none';
+
+      tr.innerHTML = `
+        <td>↳ ${escapeHtml(child.ip || '')}</td>
+        <td>${escapeHtml(child.created_at || '')}</td>
+        <td>${escapeHtml(child.country || '')}</td>
+        <td>${escapeHtml(child.region || '')}</td>
+        <td>${escapeHtml(child.city || '')}</td>
+        <td>${escapeHtml(child.latitude || '')}</td>
+        <td>${escapeHtml(child.longitude || '')}</td>
+        <td>${escapeHtml(child.user_agent || '')}</td>
+        <td>1</td>
+        <td></td>
+      `;
+
+      return tr;
+    }
+
+    function bindToggleButtons() {
+      const buttons = document.querySelectorAll('.toggle-btn');
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const targetClass = button.dataset.target;
+          const rows = document.querySelectorAll('.' + targetClass);
+          const isHidden = Array.from(rows).every((row) => row.style.display === 'none');
+
+          rows.forEach((row) => {
+            row.style.display = isHidden ? 'table-row' : 'none';
+          });
+
+          button.textContent = isHidden ? 'Ocultar' : 'Ver';
+        });
+      });
+    }
 
     async function loadVisits() {
       const rid = ridInput.value.trim();
@@ -172,26 +292,20 @@
           return;
         }
 
-        for (const visit of visits) {
-          const tr = document.createElement('tr');
+        visits.forEach((visit, index) => {
+          const groupClass = `child-group-${index}`;
+          tbody.appendChild(createParentRow(visit, index));
 
-          tr.innerHTML = `
-            <td>${visit.id ?? ''}</td>
-            <td>${visit.rid ?? ''}</td>
-            <td>${visit.created_at ?? ''}</td>
-            <td>${visit.ip ?? ''}</td>
-            <td>${visit.country ?? ''}</td>
-            <td>${visit.region ?? ''}</td>
-            <td>${visit.city ?? ''}</td>
-            <td>${visit.latitude ?? ''}</td>
-            <td>${visit.longitude ?? ''}</td>
-            <td>${visit.user_agent ?? ''}</td>
-          `;
+          if (Array.isArray(visit.children) && visit.children.length > 0) {
+            visit.children.forEach((child) => {
+              tbody.appendChild(createChildRow(child, groupClass));
+            });
+          }
+        });
 
-          tbody.appendChild(tr);
-        }
+        bindToggleButtons();
 
-        statusEl.textContent = `Se han encontrado ${visits.length} registros.`;
+        statusEl.textContent = `Se han encontrado ${visits.length} IPs únicas.`;
         emptyState.style.display = 'none';
         table.style.display = 'table';
       } catch (error) {
