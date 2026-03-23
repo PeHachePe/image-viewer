@@ -68,7 +68,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 1100px;
+      min-width: 1000px;
     }
 
     th, td {
@@ -108,31 +108,38 @@
     }
 
     .child-row td:first-child {
-      padding-left: 28px;
+      padding-left: 42px;
     }
 
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #2b2b2b;
-      font-size: 12px;
-      margin-left: 8px;
-      color: #ddd;
+    .ip-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .toggle-btn {
-      background: transparent;
-      border: 1px solid #444;
-      color: #fff;
-      padding: 4px 10px;
+    .toggle-ip-btn {
+      width: 24px;
+      height: 24px;
+      min-width: 24px;
+      padding: 0;
       border-radius: 6px;
+      border: 1px solid #444;
+      background: transparent;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       cursor: pointer;
-      font-size: 12px;
     }
 
-    .toggle-btn:hover {
+    .toggle-ip-btn:hover {
       background: #2a2a2a;
+    }
+
+    .toggle-ip-btn.hidden {
+      visibility: hidden;
     }
   </style>
 </head>
@@ -158,8 +165,6 @@
           <th>Latitud</th>
           <th>Longitud</th>
           <th>User-Agent</th>
-          <th>Total</th>
-          <th>Detalles</th>
         </tr>
       </thead>
       <tbody id="visitsTbody"></tbody>
@@ -189,12 +194,23 @@
       const tr = document.createElement('tr');
       tr.className = 'parent-row';
 
-      const childCount = Array.isArray(visit.children) ? visit.children.length : 0;
-      const hasChildren = childCount > 0;
-      const targetClass = `child-group-${index}`;
+      const hasChildren = Array.isArray(visit.children) && visit.children.length > 0;
+      const groupClass = `child-group-${index}`;
 
       tr.innerHTML = `
-        <td>${escapeHtml(visit.ip || '')}</td>
+        <td>
+          <div class="ip-cell">
+            <button
+              class="toggle-ip-btn ${hasChildren ? '' : 'hidden'}"
+              data-group="${groupClass}"
+              data-open="false"
+              type="button"
+            >
+              +
+            </button>
+            <span>${escapeHtml(visit.ip || '')}</span>
+          </div>
+        </td>
         <td>${escapeHtml(visit.created_at || '')}</td>
         <td>${escapeHtml(visit.country || '')}</td>
         <td>${escapeHtml(visit.region || '')}</td>
@@ -202,57 +218,45 @@
         <td>${escapeHtml(visit.latitude || '')}</td>
         <td>${escapeHtml(visit.longitude || '')}</td>
         <td>${escapeHtml(visit.user_agent || '')}</td>
-        <td>
-          ${escapeHtml(visit.count || 1)}
-          ${hasChildren ? `<span class="badge">${childCount} variaciones</span>` : ''}
-        </td>
-        <td>
-          ${
-            hasChildren
-              ? `<button class="toggle-btn" data-target="${targetClass}">Ver</button>`
-              : ''
-          }
-        </td>
       `;
 
       return tr;
     }
 
-    function createChildRow(child, groupClass) {
+    function createChildRow(child, index) {
       const tr = document.createElement('tr');
-      tr.className = `child-row ${groupClass}`;
+      tr.className = `child-row child-group-${index}`;
       tr.style.display = 'none';
 
       tr.innerHTML = `
         <td>↳ ${escapeHtml(child.ip || '')}</td>
-        <td>${escapeHtml(child.created_at || '')}</td>
+        <td>${escapeHtml(child.first_seen || child.created_at || '')}</td>
         <td>${escapeHtml(child.country || '')}</td>
         <td>${escapeHtml(child.region || '')}</td>
         <td>${escapeHtml(child.city || '')}</td>
         <td>${escapeHtml(child.latitude || '')}</td>
         <td>${escapeHtml(child.longitude || '')}</td>
         <td>${escapeHtml(child.user_agent || '')}</td>
-        <td>1</td>
-        <td></td>
       `;
 
       return tr;
     }
 
     function bindToggleButtons() {
-      const buttons = document.querySelectorAll('.toggle-btn');
+      const buttons = document.querySelectorAll('.toggle-ip-btn:not(.hidden)');
 
       buttons.forEach((button) => {
         button.addEventListener('click', () => {
-          const targetClass = button.dataset.target;
-          const rows = document.querySelectorAll('.' + targetClass);
-          const isHidden = Array.from(rows).every((row) => row.style.display === 'none');
+          const groupClass = button.dataset.group;
+          const isOpen = button.dataset.open === 'true';
+          const rows = document.querySelectorAll('.' + groupClass);
 
           rows.forEach((row) => {
-            row.style.display = isHidden ? 'table-row' : 'none';
+            row.style.display = isOpen ? 'none' : 'table-row';
           });
 
-          button.textContent = isHidden ? 'Ocultar' : 'Ver';
+          button.dataset.open = isOpen ? 'false' : 'true';
+          button.textContent = isOpen ? '+' : '−';
         });
       });
     }
@@ -293,19 +297,18 @@
         }
 
         visits.forEach((visit, index) => {
-          const groupClass = `child-group-${index}`;
           tbody.appendChild(createParentRow(visit, index));
 
           if (Array.isArray(visit.children) && visit.children.length > 0) {
             visit.children.forEach((child) => {
-              tbody.appendChild(createChildRow(child, groupClass));
+              tbody.appendChild(createChildRow(child, index));
             });
           }
         });
 
         bindToggleButtons();
 
-        statusEl.textContent = `Se han encontrado ${visits.length} IPs únicas.`;
+        statusEl.textContent = `Se han encontrado ${visits.length} IPs agrupadas.`;
         emptyState.style.display = 'none';
         table.style.display = 'table';
       } catch (error) {
