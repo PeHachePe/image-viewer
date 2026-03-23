@@ -19,14 +19,34 @@
 
     h1 {
       margin-top: 0;
+      margin-bottom: 16px;
       font-size: 28px;
     }
 
-    .topbar {
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+
+    .panel {
+      border: 1px solid #333;
+      border-radius: 10px;
+      background: #181818;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .topbar,
+    .generator-row,
+    .generator-output {
       display: flex;
       gap: 12px;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
       flex-wrap: wrap;
+    }
+
+    .generator-output {
+      margin-bottom: 0;
     }
 
     input {
@@ -37,6 +57,16 @@
       color: #fff;
       border-radius: 8px;
       min-width: 280px;
+    }
+
+    #genImgInput,
+    #generatedUrlInput {
+      min-width: 420px;
+      flex: 1;
+    }
+
+    #generatedUrlInput[readonly] {
+      color: #cfcfcf;
     }
 
     button {
@@ -184,35 +214,64 @@
       border-color: #2d6cdf;
       color: #7db3ff;
     }
+
+    .hint {
+      font-size: 13px;
+      color: #aaa;
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>
   <h1>Visitas por código</h1>
 
-  <div class="topbar">
-    <input id="ridInput" type="text" placeholder="Introduce el rid" />
-    <button id="loadBtn">Cargar</button>
+  <div class="panel">
+    <h2>Generador de URL</h2>
+
+    <div class="generator-row">
+      <input id="genRidInput" type="text" placeholder="RID" />
+      <input id="genImgInput" type="text" placeholder="URL de imagen o gif" />
+      <button id="generateBtn" type="button">Generar</button>
+    </div>
+
+    <div class="generator-output">
+      <input id="generatedUrlInput" type="text" readonly placeholder="Aquí saldrá la URL generada" />
+      <button id="copyGeneratedBtn" type="button">Copiar</button>
+    </div>
+
+    <div class="hint">
+      La URL generada usará <code>/api/i?rid=...&img=...</code>
+    </div>
   </div>
 
-  <div id="status" class="status">Introduce un rid y pulsa Cargar.</div>
+  <div class="panel">
+    <h2>Buscar registros</h2>
 
-  <div class="table-wrapper">
-    <table id="visitsTable" style="display: none;">
-      <thead>
-        <tr>
-          <th data-sort="ip">IP<span class="sort-indicator"></span></th>
-          <th data-sort="created_at">Fecha<span class="sort-indicator"></span></th>
-          <th data-sort="country">País<span class="sort-indicator"></span></th>
-          <th data-sort="region">Región<span class="sort-indicator"></span></th>
-          <th data-sort="city">Ciudad<span class="sort-indicator"></span></th>
-          <th data-sort="latitude">Coordenadas<span class="sort-indicator"></span></th>
-          <th data-sort="user_agent">Dispositivo<span class="sort-indicator"></span></th>
-        </tr>
-      </thead>
-      <tbody id="visitsTbody"></tbody>
-    </table>
+    <div class="topbar">
+      <input id="ridInput" type="text" placeholder="Introduce el rid" />
+      <button id="loadBtn">Cargar</button>
+    </div>
 
-    <div id="emptyState" class="empty">No hay datos cargados.</div>
+    <div id="status" class="status">Introduce un rid y pulsa Cargar.</div>
+
+    <div class="table-wrapper">
+      <table id="visitsTable" style="display: none;">
+        <thead>
+          <tr>
+            <th data-sort="ip">IP<span class="sort-indicator"></span></th>
+            <th data-sort="created_at">Fecha<span class="sort-indicator"></span></th>
+            <th data-sort="country">País<span class="sort-indicator"></span></th>
+            <th data-sort="region">Región<span class="sort-indicator"></span></th>
+            <th data-sort="city">Ciudad<span class="sort-indicator"></span></th>
+            <th data-sort="latitude">Coordenadas<span class="sort-indicator"></span></th>
+            <th data-sort="user_agent">Dispositivo<span class="sort-indicator"></span></th>
+          </tr>
+        </thead>
+        <tbody id="visitsTbody"></tbody>
+      </table>
+
+      <div id="emptyState" class="empty">No hay datos cargados.</div>
+    </div>
   </div>
 
   <script>
@@ -222,6 +281,12 @@
     const table = document.getElementById('visitsTable');
     const tbody = document.getElementById('visitsTbody');
     const emptyState = document.getElementById('emptyState');
+
+    const genRidInput = document.getElementById('genRidInput');
+    const genImgInput = document.getElementById('genImgInput');
+    const generateBtn = document.getElementById('generateBtn');
+    const generatedUrlInput = document.getElementById('generatedUrlInput');
+    const copyGeneratedBtn = document.getElementById('copyGeneratedBtn');
 
     let currentVisits = [];
     let sortState = {
@@ -449,14 +514,17 @@
 
       try {
         await navigator.clipboard.writeText(text);
-        const old = button.textContent;
-        button.textContent = '✓';
-        button.classList.add('copied');
 
-        setTimeout(() => {
-          button.textContent = old;
-          button.classList.remove('copied');
-        }, 900);
+        if (button) {
+          const old = button.textContent;
+          button.textContent = '✓';
+          button.classList.add('copied');
+
+          setTimeout(() => {
+            button.textContent = old;
+            button.classList.remove('copied');
+          }, 900);
+        }
       } catch {
         const temp = document.createElement('textarea');
         temp.value = text;
@@ -598,11 +666,65 @@
       renderTable();
     }
 
+    function normalizeImageUrl(value) {
+      let url = (value || '').trim();
+
+      if (!url) return '';
+
+      if (url.startsWith('//')) {
+        url = 'https:' + url;
+      } else if (/^https?:\/\//i.test(url)) {
+        url = url.replace(/^https?:\/\//i, '');
+      }
+
+      return url;
+    }
+
+    function generateTrackingUrl() {
+      const rid = genRidInput.value.trim();
+      const img = normalizeImageUrl(genImgInput.value);
+
+      const baseUrl = `${window.location.origin}/api/i`;
+      const params = new URLSearchParams();
+
+      if (rid) {
+        params.set('rid', rid);
+      }
+
+      if (img) {
+        params.set('img', img);
+      }
+
+      generatedUrlInput.value = `${baseUrl}?${params.toString()}`;
+    }
+
+    async function copyGeneratedUrl() {
+      const value = generatedUrlInput.value.trim();
+      if (!value) return;
+
+      await copyText(value, copyGeneratedBtn);
+    }
+
     loadBtn.addEventListener('click', loadVisits);
 
     ridInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         loadVisits();
+      }
+    });
+
+    generateBtn.addEventListener('click', generateTrackingUrl);
+    copyGeneratedBtn.addEventListener('click', copyGeneratedUrl);
+
+    genRidInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        generateTrackingUrl();
+      }
+    });
+
+    genImgInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        generateTrackingUrl();
       }
     });
 
@@ -615,6 +737,7 @@
 
     if (initialRid) {
       ridInput.value = initialRid;
+      genRidInput.value = initialRid;
       loadVisits();
     } else {
       updateSortIndicators();
