@@ -28,13 +28,10 @@ export default async function handler(req, res) {
         city,
         latitude,
         longitude,
-        image_url,
         user_agent,
         created_at
       `)
       .eq('rid', rid)
-      .not('country', 'eq', 'ES')
-      .or('region.is.null,region.neq.AR')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -44,9 +41,13 @@ export default async function handler(req, res) {
       });
     }
 
+    const visits = (data || []).filter(
+      (visit) => !(visit.country === 'ES' && visit.region === 'AR')
+    );
+
     return res.status(200).json({
       ok: true,
-      visits: data
+      visits
     });
   } catch (error) {
     return res.status(500).json({
