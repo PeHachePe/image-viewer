@@ -38,31 +38,49 @@
 
     .topbar,
     .generator-row,
-    .generator-output {
+    .generator-output,
+    .pagination-bar {
       display: flex;
       gap: 12px;
       margin-bottom: 12px;
       flex-wrap: wrap;
+      align-items: center;
     }
 
     .generator-output {
       margin-bottom: 0;
     }
 
-    input {
+    input,
+    select {
       padding: 10px 12px;
       font-size: 16px;
       border: 1px solid #444;
       background: #1b1b1b;
       color: #fff;
       border-radius: 8px;
+      min-width: 0;
+    }
+
+    #ridInput {
       min-width: 280px;
     }
 
-    #genImgInput,
+    #genRidInput {
+      flex: 0 0 180px;
+      width: 180px;
+    }
+
+    #genImgInput {
+      flex: 1 1 0;
+      width: 100%;
+      min-width: 0;
+    }
+
     #generatedUrlInput {
-      min-width: 420px;
-      flex: 1;
+      flex: 1 1 0;
+      width: 100%;
+      min-width: 0;
     }
 
     #generatedUrlInput[readonly] {
@@ -81,6 +99,11 @@
 
     button:hover {
       background: #1f57b8;
+    }
+
+    .generator-row > button,
+    .generator-output > button {
+      flex: 0 0 auto;
     }
 
     .status {
@@ -156,7 +179,8 @@
 
     .toggle-ip-btn,
     .mini-btn,
-    .map-btn {
+    .map-btn,
+    .page-btn {
       width: 24px;
       height: 24px;
       min-width: 24px;
@@ -175,7 +199,8 @@
 
     .toggle-ip-btn:hover,
     .mini-btn:hover,
-    .map-btn:hover {
+    .map-btn:hover,
+    .page-btn:hover {
       background: #2a2a2a;
     }
 
@@ -219,6 +244,76 @@
       font-size: 13px;
       color: #aaa;
       margin-top: 2px;
+    }
+
+    .pagination-bar {
+      justify-content: space-between;
+      margin-top: 14px;
+      margin-bottom: 0;
+    }
+
+    .pagination-left,
+    .pagination-right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .page-info {
+      color: #bbb;
+      font-size: 14px;
+    }
+
+    .page-btn {
+      width: auto;
+      min-width: 34px;
+      padding: 0 10px;
+      height: 32px;
+      font-size: 14px;
+    }
+
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 14px;
+      }
+
+      .panel {
+        padding: 12px;
+      }
+
+      .topbar,
+      .generator-row,
+      .generator-output,
+      .pagination-bar,
+      .pagination-left,
+      .pagination-right {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .topbar input,
+      .generator-row input,
+      .generator-output input,
+      .topbar button,
+      .generator-row button,
+      .generator-output button,
+      .pagination-bar select,
+      .pagination-bar button {
+        width: 100%;
+        min-width: 0;
+      }
+
+      #genRidInput {
+        flex: 1 1 100%;
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -272,6 +367,25 @@
 
       <div id="emptyState" class="empty">No hay datos cargados.</div>
     </div>
+
+    <div id="paginationBar" class="pagination-bar" style="display: none;">
+      <div class="pagination-left">
+        <label for="pageSizeSelect">Filas por página</label>
+        <select id="pageSizeSelect">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="all">Todos</option>
+        </select>
+      </div>
+
+      <div class="pagination-right">
+        <button id="prevPageBtn" class="page-btn" type="button">Anterior</button>
+        <span id="pageInfo" class="page-info"></span>
+        <button id="nextPageBtn" class="page-btn" type="button">Siguiente</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -288,10 +402,21 @@
     const generatedUrlInput = document.getElementById('generatedUrlInput');
     const copyGeneratedBtn = document.getElementById('copyGeneratedBtn');
 
+    const paginationBar = document.getElementById('paginationBar');
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    const pageInfo = document.getElementById('pageInfo');
+
     let currentVisits = [];
     let sortState = {
       key: 'created_at',
       direction: 'desc'
+    };
+
+    let paginationState = {
+      page: 1,
+      pageSize: 20
     };
 
     function escapeHtml(value) {
@@ -386,6 +511,27 @@
       });
     }
 
+    function getPagedVisits(visits) {
+      if (paginationState.pageSize === 'all') {
+        return visits;
+      }
+
+      const size = Number(paginationState.pageSize);
+      const start = (paginationState.page - 1) * size;
+      const end = start + size;
+
+      return visits.slice(start, end);
+    }
+
+    function getTotalPages(totalItems) {
+      if (paginationState.pageSize === 'all') {
+        return totalItems > 0 ? 1 : 0;
+      }
+
+      const size = Number(paginationState.pageSize);
+      return Math.ceil(totalItems / size);
+    }
+
     function updateSortIndicators() {
       const headers = document.querySelectorAll('th[data-sort]');
 
@@ -399,6 +545,32 @@
           indicator.textContent = '';
         }
       });
+    }
+
+    function updatePaginationUI(totalItems) {
+      if (totalItems === 0) {
+        paginationBar.style.display = 'none';
+        return;
+      }
+
+      paginationBar.style.display = 'flex';
+
+      const totalPages = getTotalPages(totalItems);
+
+      if (paginationState.page > totalPages && totalPages > 0) {
+        paginationState.page = totalPages;
+      }
+
+      if (paginationState.pageSize === 'all') {
+        pageInfo.textContent = `${totalItems} resultados`;
+        prevPageBtn.disabled = true;
+        nextPageBtn.disabled = true;
+        return;
+      }
+
+      pageInfo.textContent = `Página ${paginationState.page} de ${totalPages}`;
+      prevPageBtn.disabled = paginationState.page <= 1;
+      nextPageBtn.disabled = paginationState.page >= totalPages;
     }
 
     function getCoordsText(latitude, longitude) {
@@ -584,8 +756,10 @@
       tbody.innerHTML = '';
 
       const sortedVisits = sortVisits(currentVisits);
+      const totalItems = sortedVisits.length;
+      const pagedVisits = getPagedVisits(sortedVisits);
 
-      sortedVisits.forEach((visit, index) => {
+      pagedVisits.forEach((visit, index) => {
         tbody.appendChild(createParentRow(visit, index));
 
         if (Array.isArray(visit.children) && visit.children.length > 0) {
@@ -599,51 +773,57 @@
       bindCopyButtons();
       bindMapButtons();
       updateSortIndicators();
+      updatePaginationUI(totalItems);
     }
 
     async function loadVisits() {
-        const rid = ridInput.value.trim();
+      const rid = ridInput.value.trim();
 
-        if (!rid) {
+      if (!rid) {
         statusEl.textContent = 'Debes introducir un rid.';
         table.style.display = 'none';
         emptyState.style.display = 'block';
         emptyState.textContent = 'No hay datos cargados.';
+        paginationBar.style.display = 'none';
 
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete('rid');
         window.history.replaceState({}, '', cleanUrl.toString());
 
         return;
-        }
+      }
 
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set('rid', rid);
-        window.history.replaceState({}, '', nextUrl.toString());
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('rid', rid);
+      window.history.replaceState({}, '', nextUrl.toString());
 
-        statusEl.textContent = 'Cargando...';
-        table.style.display = 'none';
-        emptyState.style.display = 'block';
-        emptyState.textContent = 'Cargando datos...';
-        tbody.innerHTML = '';
+      genRidInput.value = rid;
+      paginationState.page = 1;
 
-        try {
+      statusEl.textContent = 'Cargando...';
+      table.style.display = 'none';
+      emptyState.style.display = 'block';
+      emptyState.textContent = 'Cargando datos...';
+      tbody.innerHTML = '';
+
+      try {
         const response = await fetch('/api/visits?rid=' + encodeURIComponent(rid));
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
-            throw new Error(data.error || 'Error al cargar visitas');
+          throw new Error(data.error || 'Error al cargar visitas');
         }
 
         const visits = Array.isArray(data.visits) ? data.visits : [];
         currentVisits = visits;
 
         if (visits.length === 0) {
-            statusEl.textContent = 'No se han encontrado registros para ese rid.';
-            table.style.display = 'none';
-            emptyState.style.display = 'block';
-            emptyState.textContent = 'Sin resultados.';
-            return;
+          statusEl.textContent = 'No se han encontrado registros para ese rid.';
+          table.style.display = 'none';
+          emptyState.style.display = 'block';
+          emptyState.textContent = 'Sin resultados.';
+          paginationBar.style.display = 'none';
+          return;
         }
 
         renderTable();
@@ -651,12 +831,13 @@
         statusEl.textContent = `Se han encontrado ${visits.length} IPs agrupadas.`;
         emptyState.style.display = 'none';
         table.style.display = 'table';
-        } catch (error) {
+      } catch (error) {
         statusEl.textContent = 'Error al cargar los datos.';
         table.style.display = 'none';
         emptyState.style.display = 'block';
         emptyState.textContent = error.message || 'Error inesperado.';
-        }
+        paginationBar.style.display = 'none';
+      }
     }
 
     function handleSortClick(event) {
@@ -672,6 +853,7 @@
         sortState.direction = key === 'created_at' ? 'desc' : 'asc';
       }
 
+      paginationState.page = 1;
       renderTable();
     }
 
@@ -739,6 +921,27 @@
 
     document.querySelectorAll('th[data-sort]').forEach((th) => {
       th.addEventListener('click', handleSortClick);
+    });
+
+    pageSizeSelect.addEventListener('change', () => {
+      paginationState.pageSize = pageSizeSelect.value === 'all' ? 'all' : Number(pageSizeSelect.value);
+      paginationState.page = 1;
+      renderTable();
+    });
+
+    prevPageBtn.addEventListener('click', () => {
+      if (paginationState.page > 1) {
+        paginationState.page -= 1;
+        renderTable();
+      }
+    });
+
+    nextPageBtn.addEventListener('click', () => {
+      const totalPages = getTotalPages(currentVisits.length);
+      if (paginationState.page < totalPages) {
+        paginationState.page += 1;
+        renderTable();
+      }
     });
 
     const params = new URLSearchParams(window.location.search);
