@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
 
     const contentLength = imageResponse.headers.get('content-length');
     if (contentLength) {
