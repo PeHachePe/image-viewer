@@ -68,7 +68,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 1000px;
+      min-width: 1120px;
     }
 
     th, td {
@@ -124,7 +124,9 @@
       gap: 8px;
     }
 
-    .toggle-ip-btn {
+    .toggle-ip-btn,
+    .mini-btn,
+    .map-btn {
       width: 24px;
       height: 24px;
       min-width: 24px;
@@ -133,7 +135,7 @@
       border: 1px solid #444;
       background: transparent;
       color: #fff;
-      font-size: 14px;
+      font-size: 13px;
       line-height: 1;
       display: inline-flex;
       align-items: center;
@@ -141,11 +143,14 @@
       cursor: pointer;
     }
 
-    .toggle-ip-btn:hover {
+    .toggle-ip-btn:hover,
+    .mini-btn:hover,
+    .map-btn:hover {
       background: #2a2a2a;
     }
 
-    .toggle-ip-btn.hidden {
+    .toggle-ip-btn.hidden,
+    .map-btn.hidden {
       visibility: hidden;
     }
 
@@ -162,6 +167,22 @@
       color: #888;
       font-weight: 400;
       word-break: break-word;
+    }
+
+    .coords-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .coords-text {
+      white-space: nowrap;
+    }
+
+    .copied {
+      border-color: #2d6cdf;
+      color: #7db3ff;
     }
   </style>
 </head>
@@ -184,8 +205,7 @@
           <th data-sort="country">País<span class="sort-indicator"></span></th>
           <th data-sort="region">Región<span class="sort-indicator"></span></th>
           <th data-sort="city">Ciudad<span class="sort-indicator"></span></th>
-          <th data-sort="latitude">Latitud<span class="sort-indicator"></span></th>
-          <th data-sort="longitude">Longitud<span class="sort-indicator"></span></th>
+          <th data-sort="latitude">Coordenadas<span class="sort-indicator"></span></th>
           <th data-sort="user_agent">Dispositivo<span class="sort-indicator"></span></th>
         </tr>
       </thead>
@@ -316,6 +336,34 @@
       });
     }
 
+    function getCoordsText(latitude, longitude) {
+      const hasLat = latitude !== null && latitude !== undefined && latitude !== '';
+      const hasLon = longitude !== null && longitude !== undefined && longitude !== '';
+
+      if (!hasLat && !hasLon) return '';
+      return `${latitude ?? ''}, ${longitude ?? ''}`;
+    }
+
+    function createCoordsCell(latitude, longitude) {
+      const coordsText = getCoordsText(latitude, longitude);
+      const hasCoords = !!coordsText;
+
+      return `
+        <div class="coords-cell">
+          <span class="coords-text">${escapeHtml(coordsText)}</span>
+          <button
+            class="map-btn ${hasCoords ? '' : 'hidden'}"
+            type="button"
+            data-lat="${escapeHtml(latitude ?? '')}"
+            data-lon="${escapeHtml(longitude ?? '')}"
+            title="Abrir en Google Maps"
+          >
+            📍
+          </button>
+        </div>
+      `;
+    }
+
     function createParentRow(visit, index) {
       const tr = document.createElement('tr');
       tr.className = 'parent-row';
@@ -332,18 +380,26 @@
               data-group="${groupClass}"
               data-open="false"
               type="button"
+              title="Desplegar"
             >
               +
             </button>
             <span>${escapeHtml(visit.ip || '')}</span>
+            <button
+              class="mini-btn copy-ip-btn"
+              type="button"
+              data-ip="${escapeHtml(visit.ip || '')}"
+              title="Copiar IP"
+            >
+              ⧉
+            </button>
           </div>
         </td>
         <td>${escapeHtml(formatDate(visit.created_at))}</td>
         <td>${escapeHtml(visit.country || '')}</td>
         <td>${escapeHtml(visit.region || '')}</td>
         <td>${escapeHtml(visit.city || '')}</td>
-        <td>${escapeHtml(visit.latitude || '')}</td>
-        <td>${escapeHtml(visit.longitude || '')}</td>
+        <td>${createCoordsCell(visit.latitude, visit.longitude)}</td>
         <td>
           ${escapeHtml(parsedUa.short)}
           <span class="ua-full">${escapeHtml(parsedUa.full)}</span>
@@ -361,13 +417,24 @@
       const parsedUa = parseUserAgent(child.user_agent);
 
       tr.innerHTML = `
-        <td>↳ ${escapeHtml(child.ip || '')}</td>
+        <td>
+          <div class="ip-cell">
+            <span>↳ ${escapeHtml(child.ip || '')}</span>
+            <button
+              class="mini-btn copy-ip-btn"
+              type="button"
+              data-ip="${escapeHtml(child.ip || '')}"
+              title="Copiar IP"
+            >
+              ⧉
+            </button>
+          </div>
+        </td>
         <td>${escapeHtml(formatDate(child.first_seen || child.created_at || ''))}</td>
         <td>${escapeHtml(child.country || '')}</td>
         <td>${escapeHtml(child.region || '')}</td>
         <td>${escapeHtml(child.city || '')}</td>
-        <td>${escapeHtml(child.latitude || '')}</td>
-        <td>${escapeHtml(child.longitude || '')}</td>
+        <td>${createCoordsCell(child.latitude, child.longitude)}</td>
         <td>
           ${escapeHtml(parsedUa.short)}
           <span class="ua-full">${escapeHtml(parsedUa.full)}</span>
@@ -375,6 +442,55 @@
       `;
 
       return tr;
+    }
+
+    async function copyText(text, button) {
+      if (!text) return;
+
+      try {
+        await navigator.clipboard.writeText(text);
+        const old = button.textContent;
+        button.textContent = '✓';
+        button.classList.add('copied');
+
+        setTimeout(() => {
+          button.textContent = old;
+          button.classList.remove('copied');
+        }, 900);
+      } catch {
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+      }
+    }
+
+    function bindCopyButtons() {
+      const buttons = document.querySelectorAll('.copy-ip-btn');
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          copyText(button.dataset.ip || '', button);
+        });
+      });
+    }
+
+    function bindMapButtons() {
+      const buttons = document.querySelectorAll('.map-btn:not(.hidden)');
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const lat = button.dataset.lat;
+          const lon = button.dataset.lon;
+
+          if (!lat || !lon) return;
+
+          const url = `https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}`;
+          window.open(url, '_blank', 'noopener,noreferrer');
+        });
+      });
     }
 
     function bindToggleButtons() {
@@ -412,6 +528,8 @@
       });
 
       bindToggleButtons();
+      bindCopyButtons();
+      bindMapButtons();
       updateSortIndicators();
     }
 
