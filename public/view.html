@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ver visitas</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      padding: 24px;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 28px;
+    }
+
+    .topbar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    input {
+      padding: 10px 12px;
+      font-size: 16px;
+      border: 1px solid #444;
+      background: #1b1b1b;
+      color: #fff;
+      border-radius: 8px;
+      min-width: 280px;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 16px;
+      border: none;
+      background: #2d6cdf;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1f57b8;
+    }
+
+    .status {
+      margin-bottom: 16px;
+      color: #ccc;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      border: 1px solid #333;
+      border-radius: 10px;
+      background: #181818;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1100px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid #2b2b2b;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: #222;
+      color: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    tr:hover td {
+      background: #202020;
+    }
+
+    a {
+      color: #7db3ff;
+      text-decoration: none;
+      word-break: break-word;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .empty {
+      padding: 20px;
+      color: #bbb;
+    }
+
+    .small {
+      font-size: 12px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1>Visitas por código</h1>
+
+  <div class="topbar">
+    <input id="ridInput" type="text" placeholder="Introduce el rid" />
+    <button id="loadBtn">Cargar</button>
+  </div>
+
+  <div id="status" class="status">Introduce un rid y pulsa Cargar.</div>
+
+  <div class="table-wrapper">
+    <table id="visitsTable" style="display: none;">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>RID</th>
+          <th>Fecha</th>
+          <th>IP</th>
+          <th>País</th>
+          <th>Región</th>
+          <th>Ciudad</th>
+          <th>Latitud</th>
+          <th>Longitud</th>
+          <th>Imagen</th>
+          <th>User-Agent</th>
+        </tr>
+      </thead>
+      <tbody id="visitsTbody"></tbody>
+    </table>
+
+    <div id="emptyState" class="empty">No hay datos cargados.</div>
+  </div>
+
+  <script>
+    const ridInput = document.getElementById('ridInput');
+    const loadBtn = document.getElementById('loadBtn');
+    const statusEl = document.getElementById('status');
+    const table = document.getElementById('visitsTable');
+    const tbody = document.getElementById('visitsTbody');
+    const emptyState = document.getElementById('emptyState');
+
+    async function loadVisits() {
+      const rid = ridInput.value.trim();
+
+      if (!rid) {
+        statusEl.textContent = 'Debes introducir un rid.';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = 'No hay datos cargados.';
+        return;
+      }
+
+      statusEl.textContent = 'Cargando...';
+      table.style.display = 'none';
+      emptyState.style.display = 'block';
+      emptyState.textContent = 'Cargando datos...';
+      tbody.innerHTML = '';
+
+      try {
+        const response = await fetch('/api/visits?rid=' + encodeURIComponent(rid));
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Error al cargar visitas');
+        }
+
+        const visits = Array.isArray(data.visits) ? data.visits : [];
+
+        if (visits.length === 0) {
+          statusEl.textContent = 'No se han encontrado registros para ese rid.';
+          table.style.display = 'none';
+          emptyState.style.display = 'block';
+          emptyState.textContent = 'Sin resultados.';
+          return;
+        }
+
+        for (const visit of visits) {
+          const tr = document.createElement('tr');
+
+          const imageCell = visit.image_url
+            ? `<a href="${visit.image_url}" target="_blank" rel="noopener noreferrer">${visit.image_url}</a>`
+            : '<span class="small">Sin imagen</span>';
+
+          tr.innerHTML = `
+            <td>${visit.id ?? ''}</td>
+            <td>${visit.rid ?? ''}</td>
+            <td>${visit.created_at ?? ''}</td>
+            <td>${visit.ip ?? ''}</td>
+            <td>${visit.country ?? ''}</td>
+            <td>${visit.region ?? ''}</td>
+            <td>${visit.city ?? ''}</td>
+            <td>${visit.latitude ?? ''}</td>
+            <td>${visit.longitude ?? ''}</td>
+            <td>${imageCell}</td>
+            <td>${visit.user_agent ?? ''}</td>
+          `;
+
+          tbody.appendChild(tr);
+        }
+
+        statusEl.textContent = `Se han encontrado ${visits.length} registros.`;
+        emptyState.style.display = 'none';
+        table.style.display = 'table';
+      } catch (error) {
+        statusEl.textContent = 'Error al cargar los datos.';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = error.message || 'Error inesperado.';
+      }
+    }
+
+    loadBtn.addEventListener('click', loadVisits);
+
+    ridInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        loadVisits();
+      }
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const initialRid = params.get('rid');
+
+    if (initialRid) {
+      ridInput.value = initialRid;
+      loadVisits();
+    }
+  </script>
+</body>
+</html>

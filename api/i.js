@@ -8,6 +8,11 @@ const supabase = createClient(
 export default async function handler(req, res) {
   try {
     let imgUrl = req.query?.img || null;
+    const rawRid = req.query?.rid || null;
+    const rid =
+      rawRid && typeof rawRid === 'string'
+        ? rawRid.trim().slice(0, 200)
+        : null;
 
     if (!imgUrl || typeof imgUrl !== 'string') {
       return res.status(400).send('Missing img param');
@@ -51,6 +56,7 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(arrayBuffer);
 
     const visit = {
+      rid,
       ip: req.headers['x-forwarded-for']?.split(',')[0]?.trim() || null,
       country: req.headers['x-vercel-ip-country'] || null,
       region: req.headers['x-vercel-ip-country-region'] || null,
