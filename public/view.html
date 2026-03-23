@@ -602,39 +602,48 @@
     }
 
     async function loadVisits() {
-      const rid = ridInput.value.trim();
+        const rid = ridInput.value.trim();
 
-      if (!rid) {
+        if (!rid) {
         statusEl.textContent = 'Debes introducir un rid.';
         table.style.display = 'none';
         emptyState.style.display = 'block';
         emptyState.textContent = 'No hay datos cargados.';
+
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('rid');
+        window.history.replaceState({}, '', cleanUrl.toString());
+
         return;
-      }
+        }
 
-      statusEl.textContent = 'Cargando...';
-      table.style.display = 'none';
-      emptyState.style.display = 'block';
-      emptyState.textContent = 'Cargando datos...';
-      tbody.innerHTML = '';
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('rid', rid);
+        window.history.replaceState({}, '', nextUrl.toString());
 
-      try {
+        statusEl.textContent = 'Cargando...';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = 'Cargando datos...';
+        tbody.innerHTML = '';
+
+        try {
         const response = await fetch('/api/visits?rid=' + encodeURIComponent(rid));
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
-          throw new Error(data.error || 'Error al cargar visitas');
+            throw new Error(data.error || 'Error al cargar visitas');
         }
 
         const visits = Array.isArray(data.visits) ? data.visits : [];
         currentVisits = visits;
 
         if (visits.length === 0) {
-          statusEl.textContent = 'No se han encontrado registros para ese rid.';
-          table.style.display = 'none';
-          emptyState.style.display = 'block';
-          emptyState.textContent = 'Sin resultados.';
-          return;
+            statusEl.textContent = 'No se han encontrado registros para ese rid.';
+            table.style.display = 'none';
+            emptyState.style.display = 'block';
+            emptyState.textContent = 'Sin resultados.';
+            return;
         }
 
         renderTable();
@@ -642,12 +651,12 @@
         statusEl.textContent = `Se han encontrado ${visits.length} IPs agrupadas.`;
         emptyState.style.display = 'none';
         table.style.display = 'table';
-      } catch (error) {
+        } catch (error) {
         statusEl.textContent = 'Error al cargar los datos.';
         table.style.display = 'none';
         emptyState.style.display = 'block';
         emptyState.textContent = error.message || 'Error inesperado.';
-      }
+        }
     }
 
     function handleSortClick(event) {
