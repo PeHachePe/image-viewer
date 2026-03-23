@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Viewer</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #viewer {
+      max-width: 100vw;
+      max-height: 100vh;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: none;
+    }
+
+    #message {
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      text-align: center;
+      padding: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <img id="viewer" alt="image" />
+  <div id="message"></div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    let imgUrl = params.get('img');
+
+    const viewer = document.getElementById('viewer');
+    const message = document.getElementById('message');
+
+    let trackUrl = '/api/track';
+
+    if (imgUrl) {
+      imgUrl = imgUrl.trim();
+
+      if (imgUrl.startsWith('//')) {
+        imgUrl = 'https:' + imgUrl;
+      } else if (!/^https?:\/\//i.test(imgUrl)) {
+        imgUrl = 'https://' + imgUrl;
+      }
+
+      viewer.src = imgUrl;
+      viewer.style.display = 'block';
+
+      trackUrl += '?img=' + encodeURIComponent(imgUrl);
+    } else {
+      message.textContent = 'No se ha indicado ninguna imagen';
+      message.style.display = 'block';
+    }
+
+    fetch(trackUrl)
+      .then(async (response) => {
+        const contentType = response.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          return response.json();
+        }
+
+        return { ok: response.ok };
+      })
+      .then((data) => {
+        console.log('track:', data);
+      })
+      .catch((error) => {
+        console.error('track error:', error);
+      });
+  </script>
+</body>
+</html>
