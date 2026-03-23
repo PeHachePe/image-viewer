@@ -33,6 +33,8 @@ export default async function handler(req, res) {
         created_at
       `)
       .eq('rid', rid)
+      .not('country', 'eq', 'ES')
+      .or('region.is.null,region.neq.AR')
       .order('created_at', { ascending: false });
 
     if (error) {
