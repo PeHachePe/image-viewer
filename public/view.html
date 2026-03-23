@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ver visitas</title>
+  <title>Visor</title>
   <style>
     * {
       box-sizing: border-box;
@@ -15,12 +15,6 @@
       background: #111;
       color: #fff;
       padding: 24px;
-    }
-
-    h1 {
-      margin-top: 0;
-      margin-bottom: 16px;
-      font-size: 28px;
     }
 
     h2 {
@@ -318,8 +312,6 @@
   </style>
 </head>
 <body>
-  <h1>Visitas por código</h1>
-
   <div class="panel">
     <h2>Generador de URL</h2>
 
@@ -372,8 +364,8 @@
       <div class="pagination-left">
         <label for="pageSizeSelect">Filas por página</label>
         <select id="pageSizeSelect">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
           <option value="50">50</option>
           <option value="100">100</option>
           <option value="all">Todos</option>
@@ -381,9 +373,11 @@
       </div>
 
       <div class="pagination-right">
-        <button id="prevPageBtn" class="page-btn" type="button">Anterior</button>
+        <button id="firstPageBtn" class="page-btn" type="button">&lt;&lt;</button>
+        <button id="prevPageBtn" class="page-btn" type="button">&lt;</button>
         <span id="pageInfo" class="page-info"></span>
-        <button id="nextPageBtn" class="page-btn" type="button">Siguiente</button>
+        <button id="nextPageBtn" class="page-btn" type="button">&gt;</button>
+        <button id="lastPageBtn" class="page-btn" type="button">&gt;&gt;</button>
       </div>
     </div>
   </div>
@@ -404,8 +398,10 @@
 
     const paginationBar = document.getElementById('paginationBar');
     const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const firstPageBtn = document.getElementById('firstPageBtn');
     const prevPageBtn = document.getElementById('prevPageBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
+    const lastPageBtn = document.getElementById('lastPageBtn');
     const pageInfo = document.getElementById('pageInfo');
 
     let currentVisits = [];
@@ -416,7 +412,7 @@
 
     let paginationState = {
       page: 1,
-      pageSize: 20
+      pageSize: 10
     };
 
     function escapeHtml(value) {
@@ -563,14 +559,18 @@
 
       if (paginationState.pageSize === 'all') {
         pageInfo.textContent = `${totalItems} resultados`;
+        firstPageBtn.disabled = true;
         prevPageBtn.disabled = true;
         nextPageBtn.disabled = true;
+        lastPageBtn.disabled = true;
         return;
       }
 
       pageInfo.textContent = `Página ${paginationState.page} de ${totalPages}`;
+      firstPageBtn.disabled = paginationState.page <= 1;
       prevPageBtn.disabled = paginationState.page <= 1;
       nextPageBtn.disabled = paginationState.page >= totalPages;
+      lastPageBtn.disabled = paginationState.page >= totalPages;
     }
 
     function getCoordsText(latitude, longitude) {
@@ -929,6 +929,13 @@
       renderTable();
     });
 
+    firstPageBtn.addEventListener('click', () => {
+      if (paginationState.page > 1) {
+        paginationState.page = 1;
+        renderTable();
+      }
+    });
+
     prevPageBtn.addEventListener('click', () => {
       if (paginationState.page > 1) {
         paginationState.page -= 1;
@@ -940,6 +947,14 @@
       const totalPages = getTotalPages(currentVisits.length);
       if (paginationState.page < totalPages) {
         paginationState.page += 1;
+        renderTable();
+      }
+    });
+
+    lastPageBtn.addEventListener('click', () => {
+      const totalPages = getTotalPages(currentVisits.length);
+      if (paginationState.page < totalPages) {
+        paginationState.page = totalPages;
         renderTable();
       }
     });
