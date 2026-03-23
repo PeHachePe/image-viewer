@@ -85,6 +85,13 @@
       position: sticky;
       top: 0;
       z-index: 1;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    th:hover {
+      background: #2a2a2a;
     }
 
     tr:hover td {
@@ -141,6 +148,21 @@
     .toggle-ip-btn.hidden {
       visibility: hidden;
     }
+
+    .sort-indicator {
+      margin-left: 6px;
+      color: #aaa;
+      font-size: 12px;
+    }
+
+    .ua-full {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      color: #888;
+      font-weight: 400;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -157,14 +179,14 @@
     <table id="visitsTable" style="display: none;">
       <thead>
         <tr>
-          <th>IP</th>
-          <th>Fecha</th>
-          <th>País</th>
-          <th>Región</th>
-          <th>Ciudad</th>
-          <th>Latitud</th>
-          <th>Longitud</th>
-          <th>User-Agent</th>
+          <th data-sort="ip">IP<span class="sort-indicator"></span></th>
+          <th data-sort="created_at">Fecha<span class="sort-indicator"></span></th>
+          <th data-sort="country">País<span class="sort-indicator"></span></th>
+          <th data-sort="region">Región<span class="sort-indicator"></span></th>
+          <th data-sort="city">Ciudad<span class="sort-indicator"></span></th>
+          <th data-sort="latitude">Latitud<span class="sort-indicator"></span></th>
+          <th data-sort="longitude">Longitud<span class="sort-indicator"></span></th>
+          <th data-sort="user_agent">Dispositivo<span class="sort-indicator"></span></th>
         </tr>
       </thead>
       <tbody id="visitsTbody"></tbody>
@@ -181,6 +203,12 @@
     const tbody = document.getElementById('visitsTbody');
     const emptyState = document.getElementById('emptyState');
 
+    let currentVisits = [];
+    let sortState = {
+      key: 'created_at',
+      direction: 'desc'
+    };
+
     function escapeHtml(value) {
       return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -190,12 +218,111 @@
         .replaceAll("'", '&#039;');
     }
 
+    function formatDate(value) {
+      if (!value) return '';
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'short',
+        timeStyle: 'medium'
+      }).format(date);
+    }
+
+    function parseUserAgent(ua) {
+      if (!ua) {
+        return {
+          short: '',
+          full: ''
+        };
+      }
+
+      const lower = ua.toLowerCase();
+
+      let device = 'Desconocido';
+      let browser = 'Navegador';
+
+      if (lower.includes('iphone')) device = 'iPhone';
+      else if (lower.includes('ipad')) device = 'iPad';
+      else if (lower.includes('android')) device = 'Android';
+      else if (lower.includes('windows')) device = 'Windows';
+      else if (lower.includes('mac os x') || lower.includes('macintosh')) device = 'Mac';
+      else if (lower.includes('linux')) device = 'Linux';
+
+      if (lower.includes('edg/')) browser = 'Edge';
+      else if (lower.includes('opr/') || lower.includes('opera')) browser = 'Opera';
+      else if (lower.includes('chrome/') && !lower.includes('edg/')) browser = 'Chrome';
+      else if (lower.includes('firefox/')) browser = 'Firefox';
+      else if (lower.includes('safari/') && !lower.includes('chrome/')) browser = 'Safari';
+
+      return {
+        short: `${device} · ${browser}`,
+        full: ua
+      };
+    }
+
+    function compareValues(a, b, key, direction) {
+      let valueA = a[key] ?? '';
+      let valueB = b[key] ?? '';
+
+      if (key === 'created_at') {
+        valueA = valueA ? new Date(valueA).getTime() : 0;
+        valueB = valueB ? new Date(valueB).getTime() : 0;
+      } else if (key === 'latitude' || key === 'longitude') {
+        valueA = valueA === '' ? Number.NEGATIVE_INFINITY : Number(valueA);
+        valueB = valueB === '' ? Number.NEGATIVE_INFINITY : Number(valueB);
+      } else {
+        valueA = String(valueA).toLowerCase();
+        valueB = String(valueB).toLowerCase();
+      }
+
+      let result = 0;
+
+      if (valueA < valueB) result = -1;
+      if (valueA > valueB) result = 1;
+
+      return direction === 'asc' ? result : -result;
+    }
+
+    function sortVisits(visits) {
+      const sorted = [...visits].sort((a, b) =>
+        compareValues(a, b, sortState.key, sortState.direction)
+      );
+
+      return sorted.map((visit) => {
+        const children = Array.isArray(visit.children) ? [...visit.children] : [];
+        children.sort((a, b) => compareValues(a, b, sortState.key, sortState.direction));
+
+        return {
+          ...visit,
+          children
+        };
+      });
+    }
+
+    function updateSortIndicators() {
+      const headers = document.querySelectorAll('th[data-sort]');
+
+      headers.forEach((th) => {
+        const indicator = th.querySelector('.sort-indicator');
+        if (!indicator) return;
+
+        if (th.dataset.sort === sortState.key) {
+          indicator.textContent = sortState.direction === 'asc' ? '▲' : '▼';
+        } else {
+          indicator.textContent = '';
+        }
+      });
+    }
+
     function createParentRow(visit, index) {
       const tr = document.createElement('tr');
       tr.className = 'parent-row';
 
       const hasChildren = Array.isArray(visit.children) && visit.children.length > 0;
       const groupClass = `child-group-${index}`;
+      const parsedUa = parseUserAgent(visit.user_agent);
 
       tr.innerHTML = `
         <td>
@@ -211,13 +338,16 @@
             <span>${escapeHtml(visit.ip || '')}</span>
           </div>
         </td>
-        <td>${escapeHtml(visit.created_at || '')}</td>
+        <td>${escapeHtml(formatDate(visit.created_at))}</td>
         <td>${escapeHtml(visit.country || '')}</td>
         <td>${escapeHtml(visit.region || '')}</td>
         <td>${escapeHtml(visit.city || '')}</td>
         <td>${escapeHtml(visit.latitude || '')}</td>
         <td>${escapeHtml(visit.longitude || '')}</td>
-        <td>${escapeHtml(visit.user_agent || '')}</td>
+        <td>
+          ${escapeHtml(parsedUa.short)}
+          <span class="ua-full">${escapeHtml(parsedUa.full)}</span>
+        </td>
       `;
 
       return tr;
@@ -228,15 +358,20 @@
       tr.className = `child-row child-group-${index}`;
       tr.style.display = 'none';
 
+      const parsedUa = parseUserAgent(child.user_agent);
+
       tr.innerHTML = `
         <td>↳ ${escapeHtml(child.ip || '')}</td>
-        <td>${escapeHtml(child.first_seen || child.created_at || '')}</td>
+        <td>${escapeHtml(formatDate(child.first_seen || child.created_at || ''))}</td>
         <td>${escapeHtml(child.country || '')}</td>
         <td>${escapeHtml(child.region || '')}</td>
         <td>${escapeHtml(child.city || '')}</td>
         <td>${escapeHtml(child.latitude || '')}</td>
         <td>${escapeHtml(child.longitude || '')}</td>
-        <td>${escapeHtml(child.user_agent || '')}</td>
+        <td>
+          ${escapeHtml(parsedUa.short)}
+          <span class="ua-full">${escapeHtml(parsedUa.full)}</span>
+        </td>
       `;
 
       return tr;
@@ -259,6 +394,25 @@
           button.textContent = isOpen ? '+' : '−';
         });
       });
+    }
+
+    function renderTable() {
+      tbody.innerHTML = '';
+
+      const sortedVisits = sortVisits(currentVisits);
+
+      sortedVisits.forEach((visit, index) => {
+        tbody.appendChild(createParentRow(visit, index));
+
+        if (Array.isArray(visit.children) && visit.children.length > 0) {
+          visit.children.forEach((child) => {
+            tbody.appendChild(createChildRow(child, index));
+          });
+        }
+      });
+
+      bindToggleButtons();
+      updateSortIndicators();
     }
 
     async function loadVisits() {
@@ -287,6 +441,7 @@
         }
 
         const visits = Array.isArray(data.visits) ? data.visits : [];
+        currentVisits = visits;
 
         if (visits.length === 0) {
           statusEl.textContent = 'No se han encontrado registros para ese rid.';
@@ -296,17 +451,7 @@
           return;
         }
 
-        visits.forEach((visit, index) => {
-          tbody.appendChild(createParentRow(visit, index));
-
-          if (Array.isArray(visit.children) && visit.children.length > 0) {
-            visit.children.forEach((child) => {
-              tbody.appendChild(createChildRow(child, index));
-            });
-          }
-        });
-
-        bindToggleButtons();
+        renderTable();
 
         statusEl.textContent = `Se han encontrado ${visits.length} IPs agrupadas.`;
         emptyState.style.display = 'none';
@@ -319,6 +464,22 @@
       }
     }
 
+    function handleSortClick(event) {
+      const th = event.currentTarget;
+      const key = th.dataset.sort;
+
+      if (!key) return;
+
+      if (sortState.key === key) {
+        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortState.key = key;
+        sortState.direction = key === 'created_at' ? 'desc' : 'asc';
+      }
+
+      renderTable();
+    }
+
     loadBtn.addEventListener('click', loadVisits);
 
     ridInput.addEventListener('keydown', (event) => {
@@ -327,12 +488,18 @@
       }
     });
 
+    document.querySelectorAll('th[data-sort]').forEach((th) => {
+      th.addEventListener('click', handleSortClick);
+    });
+
     const params = new URLSearchParams(window.location.search);
     const initialRid = params.get('rid');
 
     if (initialRid) {
       ridInput.value = initialRid;
       loadVisits();
+    } else {
+      updateSortIndicators();
     }
   </script>
 </body>
