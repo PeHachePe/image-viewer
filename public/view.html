@@ -98,7 +98,6 @@
       background: #1f57b8;
     }
 
-    .generator-row > button,
     .generator-output > button {
       flex: 0 0 auto;
     }
@@ -403,7 +402,6 @@
       .generator-row input,
       .generator-output input,
       .topbar button,
-      .generator-row button,
       .generator-output button,
       .pagination-bar select,
       .pagination-bar button {
@@ -441,7 +439,6 @@
     <div class="generator-row">
       <input id="genRidInput" type="text" placeholder="RID" />
       <input id="genImgInput" type="text" placeholder="URL de imagen o gif" />
-      <button id="generateBtn" type="button">Generar</button>
     </div>
 
     <div class="generator-output">
@@ -524,7 +521,6 @@
 
     const genRidInput = document.getElementById('genRidInput');
     const genImgInput = document.getElementById('genImgInput');
-    const generateBtn = document.getElementById('generateBtn');
     const generatedUrlInput = document.getElementById('generatedUrlInput');
     const copyGeneratedBtn = document.getElementById('copyGeneratedBtn');
 
@@ -554,6 +550,7 @@
     const generatedRidSet = new Set();
     let lastRidGeneratedForImage = '';
     let lastPreviewUrl = '';
+    let lastAutoOpenedRid = '';
 
     let tabs = [];
     let activeTabId = null;
@@ -730,9 +727,7 @@
         `;
 
         tabEl.addEventListener('click', (event) => {
-          if (event.target.closest('.search-tab-close')) {
-            return;
-          }
+          if (event.target.closest('.search-tab-close')) return;
           activateTab(tab.id);
         });
 
@@ -1332,7 +1327,7 @@
       const img = normalizeImageUrl(genImgInput.value);
 
       if (!img || !isValidImageUrl(img)) {
-        return;
+        return false;
       }
 
       if (img !== lastRidGeneratedForImage) {
@@ -1340,7 +1335,10 @@
         genRidInput.value = newRid;
         ridInput.value = newRid;
         lastRidGeneratedForImage = img;
+        return true;
       }
+
+      return false;
     }
 
     function resetImagePreview() {
@@ -1414,7 +1412,7 @@
       if (hasRawImage && (!img || !isValidImageUrl(img))) {
         generatedUrlInput.value = '';
         showPreviewMessage(getImageValidationMessage(), 'error');
-        return;
+        return false;
       }
 
       const rid = genRidInput.value.trim().toUpperCase();
@@ -1436,13 +1434,31 @@
       if (refreshPreview) {
         updateImagePreview(false);
       }
+
+      return !!(rid && (!hasRawImage || img));
     }
 
-    function sanitizeImageInput() {
+    async function autoOpenSearchTabIfNeeded() {
+      const rid = genRidInput.value.trim().toUpperCase();
+      const img = normalizeImageUrl(genImgInput.value);
+
+      if (!rid) return;
+      if (!img || !isValidImageUrl(img)) return;
+      if (!generatedUrlInput.value.trim()) return;
+
+      const signature = `${rid}|${img}`;
+      if (signature === lastAutoOpenedRid) return;
+
+      lastAutoOpenedRid = signature;
+      await loadVisitsByRid(rid);
+    }
+
+    async function sanitizeImageInput() {
       const rawValue = genImgInput.value.trim();
 
       if (!rawValue) {
         lastRidGeneratedForImage = '';
+        lastAutoOpenedRid = '';
         generatedUrlInput.value = '';
         resetImagePreview();
         updateGeneratedUrl();
@@ -1454,6 +1470,7 @@
       if (!normalized || !isValidImageUrl(normalized)) {
         genImgInput.value = '';
         lastRidGeneratedForImage = '';
+        lastAutoOpenedRid = '';
         generatedUrlInput.value = '';
         showPreviewMessage(getImageValidationMessage(), 'error');
         return false;
@@ -1462,7 +1479,12 @@
       genImgInput.value = normalized;
       regenerateRidForCurrentImage();
       ensureRidExists();
-      updateGeneratedUrl({ refreshPreview: true });
+      const isValid = updateGeneratedUrl({ refreshPreview: true });
+
+      if (isValid) {
+        await autoOpenSearchTabIfNeeded();
+      }
+
       return true;
     }
 
@@ -1481,56 +1503,61 @@
       }
     });
 
-    generateBtn.addEventListener('click', async () => {
-      const isValid = sanitizeImageInput();
-
-      if (!genImgInput.value.trim()) {
-        ensureRidExists();
-        updateGeneratedUrl();
-        await loadVisitsByRid(genRidInput.value);
-        return;
-      }
-
-      if (isValid && generatedUrlInput.value.trim()) {
-        await loadVisitsByRid(genRidInput.value);
-      }
-    });
-
     copyGeneratedBtn.addEventListener('click', copyGeneratedUrl);
 
-    genRidInput.addEventListener('input', () => {
+    genRidInput.addEventListener('input', async () => {
       const value = genRidInput.value.toUpperCase().replace(/\s+/g, '');
       genRidInput.value = value;
       ridInput.value = value;
-      updateGeneratedUrl();
+      const isValid = updateGeneratedUrl();
+
+      if (isValid) {
+        await autoOpenSearchTabIfNeeded();
+      }
     });
 
-    genRidInput.addEventListener('blur', () => {
+    genRidInput.addEventListener('blur', async () => {
       ensureRidExists();
-      updateGeneratedUrl();
+      const isValid = updateGeneratedUrl();
+
+      if (isValid) {
+        await autoOpenSearchTabIfNeeded();
+      }
     });
 
-    genRidInput.addEventListener('keydown', (event) => {
+    genRidInput.addEventListener('keydown', async (event) => {
       if (event.key === 'Enter') {
         ensureRidExists();
-        updateGeneratedUrl();
+        const isValid = updateGeneratedUrl();
+
+        if (isValid) {
+          await autoOpenSearchTabIfNeeded();
+        }
       }
     });
 
-    genImgInput.addEventListener('input', () => {
-      updateGeneratedUrl({ refreshPreview: true });
+    genImgInput.addEventListener('input', async () => {
+      const isValid = updateGeneratedUrl({ refreshPreview: true });
+
+      if (isValid) {
+        await autoOpenSearchTabIfNeeded();
+      }
     });
 
-    genImgInput.addEventListener('keydown', (event) => {
+    genImgInput.addEventListener('keydown', async (event) => {
       if (event.key === 'Enter') {
-        sanitizeImageInput();
+        await sanitizeImageInput();
       }
     });
 
-    genImgInput.addEventListener('blur', sanitizeImageInput);
+    genImgInput.addEventListener('blur', async () => {
+      await sanitizeImageInput();
+    });
 
     genImgInput.addEventListener('paste', () => {
-      setTimeout(sanitizeImageInput, 0);
+      setTimeout(async () => {
+        await sanitizeImageInput();
+      }, 0);
     });
 
     document.querySelectorAll('th[data-sort]').forEach((th) => {
