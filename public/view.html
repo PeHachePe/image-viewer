@@ -273,6 +273,39 @@
       cursor: default;
     }
 
+    .preview-box {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #333;
+      border-radius: 10px;
+      background: #141414;
+      display: none;
+    }
+
+    .preview-status {
+      font-size: 14px;
+      color: #bbb;
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+
+    .preview-status.ok {
+      color: #7ddc8b;
+    }
+
+    .preview-status.error {
+      color: #ff8b8b;
+    }
+
+    .preview-image {
+      display: none;
+      max-width: 100%;
+      max-height: 220px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #0f0f0f;
+    }
+
     @media (max-width: 768px) {
       body {
         padding: 14px;
@@ -327,8 +360,14 @@
       <button id="copyGeneratedBtn" type="button">Copiar</button>
     </div>
 
+    <div id="imagePreviewBox" class="preview-box">
+      <div id="imagePreviewStatus" class="preview-status"></div>
+      <img id="imagePreview" class="preview-image" alt="Vista previa de imagen" />
+    </div>
+
     <div class="hint">
-      La URL generada usará <code>/api/i?rid=...&img=...</code>
+      La URL generada usará <code>/api/i?rid=...&img=...</code><br>
+      Solo se admiten imágenes <code>.jpg</code>, <code>.png</code> y <code>.gif</code>
     </div>
   </div>
 
@@ -396,6 +435,10 @@
     const generateBtn = document.getElementById('generateBtn');
     const generatedUrlInput = document.getElementById('generatedUrlInput');
     const copyGeneratedBtn = document.getElementById('copyGeneratedBtn');
+
+    const imagePreviewBox = document.getElementById('imagePreviewBox');
+    const imagePreviewStatus = document.getElementById('imagePreviewStatus');
+    const imagePreview = document.getElementById('imagePreview');
 
     const paginationBar = document.getElementById('paginationBar');
     const pageSizeSelect = document.getElementById('pageSizeSelect');
@@ -859,22 +902,122 @@
     }
 
     function normalizeImageUrl(value) {
-      let url = (value || '').trim();
+      let raw = String(value || '').trim();
 
-      if (!url) return '';
+      if (!raw) return '';
 
-      if (url.startsWith('//')) {
-        url = 'https:' + url;
-      } else if (/^https?:\/\//i.test(url)) {
-        url = url.replace(/^https?:\/\//i, '');
+      raw = raw.replace(/\s+/g, '');
+
+      const firstUrlMatch = raw.match(/(https?:\/\/|\/\/)?[^\s]+/i);
+      raw = firstUrlMatch ? firstUrlMatch[0] : raw;
+
+      if (raw.startsWith('//')) {
+        raw = 'https:' + raw;
+      } else if (!/^https?:\/\//i.test(raw)) {
+        raw = 'https://' + raw;
       }
 
-      return url;
+      const extraProtocolMatch = raw.slice(raw.indexOf('://') + 3).search(/https?:\/\//i);
+      if (extraProtocolMatch !== -1) {
+        raw = raw.slice(0, raw.indexOf('://') + 3 + extraProtocolMatch);
+      }
+
+      try {
+        const url = new URL(raw);
+        const pathname = url.pathname;
+
+        const imageMatch = pathname.match(/.*\.(jpg|png|gif)$/i);
+        if (!imageMatch) {
+          return '';
+        }
+
+        url.pathname = imageMatch[0];
+        return url.toString();
+      } catch {
+        return '';
+      }
+    }
+
+    function isValidImageUrl(url) {
+      if (!url) return false;
+
+      try {
+        const parsed = new URL(url);
+        return /\.(jpg|png|gif)$/i.test(parsed.pathname);
+      } catch {
+        return false;
+      }
+    }
+
+    function getImageValidationMessage() {
+      return 'La URL o imagen no es válida. Solo se admiten archivos .jpg, .png y .gif';
+    }
+
+    function resetImagePreview() {
+      imagePreviewBox.style.display = 'none';
+      imagePreview.style.display = 'none';
+      imagePreview.removeAttribute('src');
+      imagePreviewStatus.textContent = '';
+      imagePreviewStatus.className = 'preview-status';
+    }
+
+    function showPreviewMessage(message, type = '') {
+      imagePreviewBox.style.display = 'block';
+      imagePreview.style.display = 'none';
+      imagePreview.removeAttribute('src');
+      imagePreviewStatus.textContent = message;
+      imagePreviewStatus.className = `preview-status ${type}`.trim();
+    }
+
+    function updateImagePreview() {
+      const rawValue = genImgInput.value.trim();
+
+      if (!rawValue) {
+        resetImagePreview();
+        return;
+      }
+
+      const normalizedUrl = normalizeImageUrl(rawValue);
+
+      if (!normalizedUrl || !isValidImageUrl(normalizedUrl)) {
+        showPreviewMessage(getImageValidationMessage(), 'error');
+        return;
+      }
+
+      imagePreviewBox.style.display = 'block';
+      imagePreview.style.display = 'none';
+      imagePreviewStatus.textContent = 'Cargando vista previa...';
+      imagePreviewStatus.className = 'preview-status';
+
+      const testImage = new Image();
+
+      testImage.onload = () => {
+        imagePreview.src = normalizedUrl;
+        imagePreview.style.display = 'block';
+        imagePreviewStatus.textContent = 'Imagen válida.';
+        imagePreviewStatus.className = 'preview-status ok';
+      };
+
+      testImage.onerror = () => {
+        imagePreview.style.display = 'none';
+        imagePreview.removeAttribute('src');
+        imagePreviewStatus.textContent = getImageValidationMessage();
+        imagePreviewStatus.className = 'preview-status error';
+      };
+
+      testImage.src = normalizedUrl;
     }
 
     function generateTrackingUrl() {
       const rid = genRidInput.value.trim();
       const img = normalizeImageUrl(genImgInput.value);
+
+      if (genImgInput.value.trim() && (!img || !isValidImageUrl(img))) {
+        genImgInput.value = '';
+        generatedUrlInput.value = '';
+        showPreviewMessage(getImageValidationMessage(), 'error');
+        return;
+      }
 
       const baseUrl = `${window.location.origin}/api/i`;
       const params = new URLSearchParams();
@@ -888,6 +1031,7 @@
       }
 
       generatedUrlInput.value = `${baseUrl}?${params.toString()}`;
+      updateImagePreview();
     }
 
     async function copyGeneratedUrl() {
@@ -918,6 +1062,46 @@
       if (event.key === 'Enter') {
         generateTrackingUrl();
       }
+    });
+
+    genImgInput.addEventListener('input', () => {
+      updateImagePreview();
+    });
+
+    genImgInput.addEventListener('blur', () => {
+      const normalized = normalizeImageUrl(genImgInput.value);
+
+      if (genImgInput.value.trim() && (!normalized || !isValidImageUrl(normalized))) {
+        genImgInput.value = '';
+        generatedUrlInput.value = '';
+        showPreviewMessage(getImageValidationMessage(), 'error');
+        return;
+      }
+
+      if (normalized) {
+        genImgInput.value = normalized;
+      }
+
+      updateImagePreview();
+    });
+
+    genImgInput.addEventListener('paste', () => {
+      setTimeout(() => {
+        const normalized = normalizeImageUrl(genImgInput.value);
+
+        if (genImgInput.value.trim() && (!normalized || !isValidImageUrl(normalized))) {
+          genImgInput.value = '';
+          generatedUrlInput.value = '';
+          showPreviewMessage(getImageValidationMessage(), 'error');
+          return;
+        }
+
+        if (normalized) {
+          genImgInput.value = normalized;
+        }
+
+        updateImagePreview();
+      }, 0);
     });
 
     document.querySelectorAll('th[data-sort]').forEach((th) => {
