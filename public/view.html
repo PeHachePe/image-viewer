@@ -108,6 +108,77 @@
       color: #ccc;
     }
 
+    .tabs-bar {
+      display: none;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .search-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 240px;
+      padding: 8px 10px;
+      border: 1px solid #444;
+      border-radius: 999px;
+      background: #141414;
+      color: #ddd;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .search-tab:hover {
+      background: #1d1d1d;
+    }
+
+    .search-tab.active {
+      background: #233c67;
+      border-color: #3f78d9;
+      color: #fff;
+    }
+
+    .search-tab-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 150px;
+      font-size: 14px;
+    }
+
+    .search-tab-count {
+      font-size: 12px;
+      color: #aaa;
+      flex: 0 0 auto;
+    }
+
+    .search-tab.active .search-tab-count {
+      color: #d6e6ff;
+    }
+
+    .search-tab-close {
+      width: 22px;
+      height: 22px;
+      min-width: 22px;
+      padding: 0;
+      border: 1px solid #4a4a4a;
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .search-tab-close:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
     .table-wrapper {
       overflow-x: auto;
       border: 1px solid #333;
@@ -344,6 +415,22 @@
         flex: 1 1 100%;
         width: 100%;
       }
+
+      .tabs-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .search-tab {
+        max-width: none;
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .search-tab-label {
+        max-width: none;
+        flex: 1 1 auto;
+      }
     }
   </style>
 </head>
@@ -382,6 +469,8 @@
     </div>
 
     <div id="status" class="status">Introduce un rid y pulsa Cargar.</div>
+
+    <div id="tabsBar" class="tabs-bar"></div>
 
     <div class="table-wrapper">
       <table id="visitsTable" style="display: none;">
@@ -431,6 +520,7 @@
     const table = document.getElementById('visitsTable');
     const tbody = document.getElementById('visitsTbody');
     const emptyState = document.getElementById('emptyState');
+    const tabsBar = document.getElementById('tabsBar');
 
     const genRidInput = document.getElementById('genRidInput');
     const genImgInput = document.getElementById('genImgInput');
@@ -464,6 +554,10 @@
     const generatedRidSet = new Set();
     let lastRidGeneratedForImage = '';
     let lastPreviewUrl = '';
+
+    let tabs = [];
+    let activeTabId = null;
+    let tabCounter = 0;
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -541,20 +635,231 @@
       return direction === 'asc' ? result : -result;
     }
 
-    function sortVisits(visits) {
-      const sorted = [...visits].sort((a, b) =>
-        compareValues(a, b, sortState.key, sortState.direction)
-      );
+    function getTabById(tabId) {
+      return tabs.find((tab) => tab.id === tabId) || null;
+    }
 
-      return sorted.map((visit) => {
-        const children = Array.isArray(visit.children) ? [...visit.children] : [];
-        children.sort((a, b) => compareValues(a, b, sortState.key, sortState.direction));
+    function getTabByRid(rid) {
+      const cleanRid = String(rid || '').trim().toUpperCase();
+      return tabs.find((tab) => tab.rid === cleanRid) || null;
+    }
 
-        return {
-          ...visit,
-          children
-        };
+    function getActiveTab() {
+      return getTabById(activeTabId);
+    }
+
+    function createTab(rid) {
+      tabCounter += 1;
+
+      return {
+        id: `tab_${tabCounter}`,
+        rid: String(rid || '').trim().toUpperCase(),
+        visits: [],
+        status: 'Cargando...',
+        error: '',
+        loading: true,
+        loaded: false,
+        sortState: {
+          key: 'created_at',
+          direction: 'desc'
+        },
+        paginationState: {
+          page: 1,
+          pageSize: 10
+        }
+      };
+    }
+
+    function updateBrowserTabsParams() {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('rid');
+      nextUrl.searchParams.delete('active');
+
+      tabs.forEach((tab) => {
+        if (tab.rid) {
+          nextUrl.searchParams.append('rid', tab.rid);
+        }
       });
+
+      const activeTab = getActiveTab();
+      if (activeTab && activeTab.rid) {
+        nextUrl.searchParams.set('active', activeTab.rid);
+      }
+
+      window.history.replaceState({}, '', nextUrl.toString());
+    }
+
+    function renderTabs() {
+      tabsBar.innerHTML = '';
+
+      if (tabs.length === 0) {
+        tabsBar.style.display = 'none';
+        return;
+      }
+
+      tabsBar.style.display = 'flex';
+
+      tabs.forEach((tab) => {
+        const tabEl = document.createElement('div');
+        tabEl.className = `search-tab${tab.id === activeTabId ? ' active' : ''}`;
+        tabEl.dataset.tabId = tab.id;
+
+        const countText = tab.loading
+          ? '...'
+          : String(Array.isArray(tab.visits) ? tab.visits.length : 0);
+
+        tabEl.innerHTML = `
+          <span class="search-tab-label" title="${escapeHtml(tab.rid)}">${escapeHtml(tab.rid)}</span>
+          <span class="search-tab-count">${escapeHtml(countText)}</span>
+          <button class="search-tab-close" type="button" data-close-tab="${escapeHtml(tab.id)}" title="Cerrar">×</button>
+        `;
+
+        tabEl.addEventListener('click', (event) => {
+          if (event.target.closest('[data-close-tab]')) {
+            return;
+          }
+
+          activateTab(tab.id);
+        });
+
+        const closeBtn = tabEl.querySelector('[data-close-tab]');
+        closeBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          closeTab(tab.id);
+        });
+
+        tabsBar.appendChild(tabEl);
+      });
+    }
+
+    function applyActiveTabToView() {
+      const activeTab = getActiveTab();
+
+      if (!activeTab) {
+        currentVisits = [];
+        sortState = {
+          key: 'created_at',
+          direction: 'desc'
+        };
+        paginationState = {
+          page: 1,
+          pageSize: Number(pageSizeSelect.value) || 10
+        };
+
+        ridInput.value = '';
+        statusEl.textContent = 'Introduce un rid y pulsa Cargar.';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = 'No hay datos cargados.';
+        paginationBar.style.display = 'none';
+        updateSortIndicators();
+        renderTabs();
+        updateBrowserTabsParams();
+        return;
+      }
+
+      ridInput.value = activeTab.rid;
+      currentVisits = Array.isArray(activeTab.visits) ? activeTab.visits : [];
+      sortState = { ...activeTab.sortState };
+      paginationState = { ...activeTab.paginationState };
+
+      pageSizeSelect.value = paginationState.pageSize === 'all'
+        ? 'all'
+        : String(paginationState.pageSize);
+
+      if (activeTab.loading) {
+        statusEl.textContent = 'Cargando...';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = 'Cargando datos...';
+        paginationBar.style.display = 'none';
+      } else if (activeTab.error) {
+        statusEl.textContent = 'Error al cargar los datos.';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = activeTab.error;
+        paginationBar.style.display = 'none';
+      } else if (!currentVisits.length) {
+        statusEl.textContent = 'No se han encontrado registros para ese rid.';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        emptyState.textContent = 'Sin resultados.';
+        paginationBar.style.display = 'none';
+      } else {
+        statusEl.textContent = `Se han encontrado ${currentVisits.length} IPs agrupadas.`;
+        emptyState.style.display = 'none';
+        table.style.display = 'table';
+        renderTable();
+      }
+
+      updateSortIndicators();
+      renderTabs();
+      updateBrowserTabsParams();
+    }
+
+    function activateTab(tabId) {
+      if (!getTabById(tabId)) return;
+
+      activeTabId = tabId;
+      applyActiveTabToView();
+
+      const activeTab = getActiveTab();
+      if (activeTab && !activeTab.loading && currentVisits.length) {
+        renderTable();
+      }
+    }
+
+    function closeTab(tabId) {
+      const closeIndex = tabs.findIndex((tab) => tab.id === tabId);
+      if (closeIndex === -1) return;
+
+      const wasActive = tabs[closeIndex].id === activeTabId;
+      tabs.splice(closeIndex, 1);
+
+      if (!tabs.length) {
+        activeTabId = null;
+        applyActiveTabToView();
+        return;
+      }
+
+      if (wasActive) {
+        const nextTab = tabs[Math.max(0, closeIndex - 1)] || tabs[0];
+        activeTabId = nextTab.id;
+      }
+
+      applyActiveTabToView();
+
+      const activeTab = getActiveTab();
+      if (activeTab && !activeTab.loading && activeTab.visits.length) {
+        renderTable();
+      }
+    }
+
+    function createOrActivateTab(rid) {
+      const cleanRid = String(rid || '').trim().toUpperCase();
+      const existingTab = getTabByRid(cleanRid);
+
+      if (existingTab) {
+        activeTabId = existingTab.id;
+        applyActiveTabToView();
+        return existingTab;
+      }
+
+      const tab = createTab(cleanRid);
+      tab.paginationState.pageSize = pageSizeSelect.value === 'all' ? 'all' : Number(pageSizeSelect.value);
+      tabs.push(tab);
+      activeTabId = tab.id;
+      applyActiveTabToView();
+      return tab;
+    }
+
+    function persistActiveTabState() {
+      const activeTab = getActiveTab();
+      if (!activeTab) return;
+
+      activeTab.sortState = { ...sortState };
+      activeTab.paginationState = { ...paginationState };
+      activeTab.visits = [...currentVisits];
     }
 
     function getPagedVisits(visits) {
@@ -824,25 +1129,8 @@
       bindMapButtons();
       updateSortIndicators();
       updatePaginationUI(totalItems);
-    }
-
-    function updateBrowserRidParam(rid) {
-      const cleanRid = String(rid || '').trim().toUpperCase();
-      const nextUrl = new URL(window.location.href);
-
-      if (cleanRid) {
-        nextUrl.searchParams.set('rid', cleanRid);
-      } else {
-        nextUrl.searchParams.delete('rid');
-      }
-
-      window.history.replaceState({}, '', nextUrl.toString());
-    }
-
-    function syncRidFromGenerator(value) {
-      const clean = String(value || '').toUpperCase();
-      ridInput.value = clean;
-      updateBrowserRidParam(clean);
+      persistActiveTabState();
+      renderTabs();
     }
 
     async function loadVisits() {
@@ -854,20 +1142,23 @@
         emptyState.style.display = 'block';
         emptyState.textContent = 'No hay datos cargados.';
         paginationBar.style.display = 'none';
-        updateBrowserRidParam('');
         return;
       }
 
-      ridInput.value = rid;
-      updateBrowserRidParam(rid);
+      const tab = createOrActivateTab(rid);
+      tab.rid = rid;
+      tab.loading = true;
+      tab.loaded = false;
+      tab.error = '';
+      tab.status = 'Cargando...';
+      tab.sortState = { ...sortState };
+      tab.paginationState = {
+        page: 1,
+        pageSize: pageSizeSelect.value === 'all' ? 'all' : Number(pageSizeSelect.value)
+      };
 
-      paginationState.page = 1;
-
-      statusEl.textContent = 'Cargando...';
-      table.style.display = 'none';
-      emptyState.style.display = 'block';
-      emptyState.textContent = 'Cargando datos...';
-      tbody.innerHTML = '';
+      activeTabId = tab.id;
+      applyActiveTabToView();
 
       try {
         const response = await fetch('/api/visits?rid=' + encodeURIComponent(rid));
@@ -877,37 +1168,39 @@
           throw new Error(data.error || 'Error al cargar visitas');
         }
 
-        const visits = Array.isArray(data.visits) ? data.visits : [];
-        currentVisits = visits;
-
-        if (visits.length === 0) {
-          statusEl.textContent = 'No se han encontrado registros para ese rid.';
-          table.style.display = 'none';
-          emptyState.style.display = 'block';
-          emptyState.textContent = 'Sin resultados.';
-          paginationBar.style.display = 'none';
-          return;
-        }
-
-        renderTable();
-
-        statusEl.textContent = `Se han encontrado ${visits.length} IPs agrupadas.`;
-        emptyState.style.display = 'none';
-        table.style.display = 'table';
+        tab.visits = Array.isArray(data.visits) ? data.visits : [];
+        tab.loading = false;
+        tab.loaded = true;
+        tab.error = '';
+        tab.status = tab.visits.length
+          ? `Se han encontrado ${tab.visits.length} IPs agrupadas.`
+          : 'No se han encontrado registros para ese rid.';
       } catch (error) {
-        statusEl.textContent = 'Error al cargar los datos.';
-        table.style.display = 'none';
-        emptyState.style.display = 'block';
-        emptyState.textContent = error.message || 'Error inesperado.';
-        paginationBar.style.display = 'none';
+        tab.visits = [];
+        tab.loading = false;
+        tab.loaded = true;
+        tab.error = error.message || 'Error inesperado.';
+        tab.status = 'Error al cargar los datos.';
+      }
+
+      if (tab.id === activeTabId) {
+        applyActiveTabToView();
+
+        if (!tab.loading && !tab.error && tab.visits.length) {
+          renderTable();
+        }
+      } else {
+        renderTabs();
+        updateBrowserTabsParams();
       }
     }
 
     function handleSortClick(event) {
       const th = event.currentTarget;
       const key = th.dataset.sort;
+      const activeTab = getActiveTab();
 
-      if (!key) return;
+      if (!key || !activeTab) return;
 
       if (sortState.key === key) {
         sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
@@ -917,6 +1210,8 @@
       }
 
       paginationState.page = 1;
+      activeTab.sortState = { ...sortState };
+      activeTab.paginationState = { ...paginationState };
       renderTable();
     }
 
@@ -1004,13 +1299,13 @@
 
       if (currentRid) {
         genRidInput.value = currentRid;
-        syncRidFromGenerator(currentRid);
+        ridInput.value = currentRid;
         return currentRid;
       }
 
       const newRid = generateUniqueRid(5);
       genRidInput.value = newRid;
-      syncRidFromGenerator(newRid);
+      ridInput.value = newRid;
       return newRid;
     }
 
@@ -1024,7 +1319,7 @@
       if (img !== lastRidGeneratedForImage) {
         const newRid = generateUniqueRid(5);
         genRidInput.value = newRid;
-        syncRidFromGenerator(newRid);
+        ridInput.value = newRid;
         lastRidGeneratedForImage = img;
       }
     }
@@ -1180,7 +1475,7 @@
     genRidInput.addEventListener('input', () => {
       const value = genRidInput.value.toUpperCase().replace(/\s+/g, '');
       genRidInput.value = value;
-      syncRidFromGenerator(value);
+      ridInput.value = value;
       updateGeneratedUrl();
     });
 
@@ -1219,7 +1514,17 @@
     pageSizeSelect.addEventListener('change', () => {
       paginationState.pageSize = pageSizeSelect.value === 'all' ? 'all' : Number(pageSizeSelect.value);
       paginationState.page = 1;
-      renderTable();
+
+      const activeTab = getActiveTab();
+      if (activeTab) {
+        activeTab.paginationState = { ...paginationState };
+      }
+
+      if (currentVisits.length) {
+        renderTable();
+      } else {
+        updatePaginationUI(0);
+      }
     });
 
     firstPageBtn.addEventListener('click', () => {
@@ -1253,15 +1558,37 @@
     });
 
     const params = new URLSearchParams(window.location.search);
-    const initialRid = params.get('rid');
+    const initialRids = params.getAll('rid').map((rid) => rid.trim().toUpperCase()).filter(Boolean);
+    const initialActiveRid = (params.get('active') || '').trim().toUpperCase();
 
-    if (initialRid) {
-      ridInput.value = initialRid.toUpperCase();
-      updateBrowserRidParam(initialRid.toUpperCase());
-      loadVisits();
+    if (initialRids.length) {
+      initialRids.forEach((rid) => {
+        const tab = createTab(rid);
+        tab.loading = false;
+        tab.loaded = false;
+        tab.status = 'Pendiente de carga.';
+        tabs.push(tab);
+      });
+
+      const activeFromUrl = initialActiveRid && getTabByRid(initialActiveRid);
+      activeTabId = activeFromUrl ? activeFromUrl.id : tabs[0].id;
+      applyActiveTabToView();
+
+      const loads = initialRids.map(async (rid) => {
+        ridInput.value = rid;
+        await loadVisits();
+      });
+
+      Promise.all(loads).then(() => {
+        const activeTab = initialActiveRid ? getTabByRid(initialActiveRid) : tabs[0];
+        if (activeTab) {
+          activateTab(activeTab.id);
+        }
+      });
     } else {
       updateSortIndicators();
       updateGeneratedUrl();
+      renderTabs();
     }
   </script>
 </body>
