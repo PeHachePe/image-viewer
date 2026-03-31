@@ -462,6 +462,7 @@
     };
 
     const generatedRidSet = new Set();
+    let lastRidGeneratedForImage = '';
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -983,6 +984,36 @@
       return fallback;
     }
 
+    function ensureRidExists() {
+      const currentRid = genRidInput.value.trim().toUpperCase();
+
+      if (currentRid) {
+        genRidInput.value = currentRid;
+        syncRidFromGenerator(currentRid);
+        return currentRid;
+      }
+
+      const newRid = generateUniqueRid(5);
+      genRidInput.value = newRid;
+      syncRidFromGenerator(newRid);
+      return newRid;
+    }
+
+    function regenerateRidForCurrentImage() {
+      const img = normalizeImageUrl(genImgInput.value);
+
+      if (!img || !isValidImageUrl(img)) {
+        return;
+      }
+
+      if (img !== lastRidGeneratedForImage) {
+        const newRid = generateUniqueRid(5);
+        genRidInput.value = newRid;
+        syncRidFromGenerator(newRid);
+        lastRidGeneratedForImage = img;
+      }
+    }
+
     function resetImagePreview() {
       imagePreviewBox.style.display = 'none';
       imagePreview.style.display = 'none';
@@ -1038,19 +1069,6 @@
       testImage.src = normalizedUrl;
     }
 
-    function ensureAutoRidForValidImage() {
-      const hasValidImage = !!normalizeImageUrl(genImgInput.value);
-      const currentRid = genRidInput.value.trim();
-
-      if (!hasValidImage || currentRid) {
-        return;
-      }
-
-      const newRid = generateUniqueRid(5);
-      genRidInput.value = newRid;
-      syncRidFromGenerator(newRid);
-    }
-
     function updateGeneratedUrl() {
       const hasRawImage = genImgInput.value.trim() !== '';
       const img = normalizeImageUrl(genImgInput.value);
@@ -1061,11 +1079,7 @@
         return;
       }
 
-      if (img) {
-        ensureAutoRidForValidImage();
-      }
-
-      const rid = genRidInput.value.trim();
+      const rid = genRidInput.value.trim().toUpperCase();
       const baseUrl = `${window.location.origin}/api/i`;
       const params = new URLSearchParams();
 
@@ -1088,6 +1102,7 @@
       const rawValue = genImgInput.value.trim();
 
       if (!rawValue) {
+        lastRidGeneratedForImage = '';
         generatedUrlInput.value = '';
         resetImagePreview();
         updateGeneratedUrl();
@@ -1098,19 +1113,15 @@
 
       if (!normalized || !isValidImageUrl(normalized)) {
         genImgInput.value = '';
+        lastRidGeneratedForImage = '';
         generatedUrlInput.value = '';
         showPreviewMessage(getImageValidationMessage(), 'error');
         return;
       }
 
       genImgInput.value = normalized;
-
-      if (!genRidInput.value.trim()) {
-        const newRid = generateUniqueRid(5);
-        genRidInput.value = newRid;
-        syncRidFromGenerator(newRid);
-      }
-
+      regenerateRidForCurrentImage();
+      ensureRidExists();
       updateGeneratedUrl();
     }
 
@@ -1129,18 +1140,32 @@
       }
     });
 
-    generateBtn.addEventListener('click', updateGeneratedUrl);
+    generateBtn.addEventListener('click', () => {
+      sanitizeImageInput();
+
+      if (!genImgInput.value.trim()) {
+        ensureRidExists();
+        updateGeneratedUrl();
+      }
+    });
+
     copyGeneratedBtn.addEventListener('click', copyGeneratedUrl);
 
     genRidInput.addEventListener('input', () => {
-      const value = genRidInput.value.trim().toUpperCase();
+      const value = genRidInput.value.toUpperCase().replace(/\s+/g, '');
       genRidInput.value = value;
       syncRidFromGenerator(value);
       updateGeneratedUrl();
     });
 
+    genRidInput.addEventListener('blur', () => {
+      ensureRidExists();
+      updateGeneratedUrl();
+    });
+
     genRidInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
+        ensureRidExists();
         updateGeneratedUrl();
       }
     });
