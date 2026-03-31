@@ -377,7 +377,7 @@
     <h2>Buscar registros</h2>
 
     <div class="topbar">
-      <input id="ridInput" type="text" placeholder="Introduce el rid" />
+      <input id="ridInput" type="text" placeholder="introduce el rid" />
       <button id="loadBtn">Cargar</button>
     </div>
 
@@ -463,6 +463,7 @@
 
     const generatedRidSet = new Set();
     let lastRidGeneratedForImage = '';
+    let lastPreviewUrl = '';
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -825,12 +826,27 @@
       updatePaginationUI(totalItems);
     }
 
+    function updateBrowserRidParam(rid) {
+      const cleanRid = String(rid || '').trim().toUpperCase();
+      const nextUrl = new URL(window.location.href);
+
+      if (cleanRid) {
+        nextUrl.searchParams.set('rid', cleanRid);
+      } else {
+        nextUrl.searchParams.delete('rid');
+      }
+
+      window.history.replaceState({}, '', nextUrl.toString());
+    }
+
     function syncRidFromGenerator(value) {
-      ridInput.value = String(value || '').toUpperCase();
+      const clean = String(value || '').toUpperCase();
+      ridInput.value = clean;
+      updateBrowserRidParam(clean);
     }
 
     async function loadVisits() {
-      const rid = ridInput.value.trim();
+      const rid = ridInput.value.trim().toUpperCase();
 
       if (!rid) {
         statusEl.textContent = 'Debes introducir un rid.';
@@ -838,17 +854,12 @@
         emptyState.style.display = 'block';
         emptyState.textContent = 'No hay datos cargados.';
         paginationBar.style.display = 'none';
-
-        const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete('rid');
-        window.history.replaceState({}, '', cleanUrl.toString());
-
+        updateBrowserRidParam('');
         return;
       }
 
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set('rid', rid);
-      window.history.replaceState({}, '', nextUrl.toString());
+      ridInput.value = rid;
+      updateBrowserRidParam(rid);
 
       paginationState.page = 1;
 
@@ -1020,6 +1031,7 @@
       imagePreview.removeAttribute('src');
       imagePreviewStatus.textContent = '';
       imagePreviewStatus.className = 'preview-status';
+      lastPreviewUrl = '';
     }
 
     function showPreviewMessage(message, type = '') {
@@ -1028,9 +1040,10 @@
       imagePreview.removeAttribute('src');
       imagePreviewStatus.textContent = message;
       imagePreviewStatus.className = `preview-status ${type}`.trim();
+      lastPreviewUrl = '';
     }
 
-    function updateImagePreview() {
+    function updateImagePreview(force = false) {
       const rawValue = genImgInput.value.trim();
 
       if (!rawValue) {
@@ -1042,6 +1055,10 @@
 
       if (!normalizedUrl || !isValidImageUrl(normalizedUrl)) {
         showPreviewMessage(getImageValidationMessage(), 'error');
+        return;
+      }
+
+      if (!force && normalizedUrl === lastPreviewUrl && imagePreview.getAttribute('src') === normalizedUrl) {
         return;
       }
 
@@ -1057,6 +1074,7 @@
         imagePreview.style.display = 'block';
         imagePreviewStatus.textContent = 'Imagen válida.';
         imagePreviewStatus.className = 'preview-status ok';
+        lastPreviewUrl = normalizedUrl;
       };
 
       testImage.onerror = () => {
@@ -1064,12 +1082,14 @@
         imagePreview.removeAttribute('src');
         imagePreviewStatus.textContent = getImageValidationMessage();
         imagePreviewStatus.className = 'preview-status error';
+        lastPreviewUrl = '';
       };
 
       testImage.src = normalizedUrl;
     }
 
-    function updateGeneratedUrl() {
+    function updateGeneratedUrl(options = {}) {
+      const { refreshPreview = false } = options;
       const hasRawImage = genImgInput.value.trim() !== '';
       const img = normalizeImageUrl(genImgInput.value);
 
@@ -1095,7 +1115,9 @@
         ? `${baseUrl}?${params.toString()}`
         : '';
 
-      updateImagePreview();
+      if (refreshPreview) {
+        updateImagePreview(false);
+      }
     }
 
     function sanitizeImageInput() {
@@ -1122,7 +1144,7 @@
       genImgInput.value = normalized;
       regenerateRidForCurrentImage();
       ensureRidExists();
-      updateGeneratedUrl();
+      updateGeneratedUrl({ refreshPreview: true });
     }
 
     async function copyGeneratedUrl() {
@@ -1170,7 +1192,9 @@
       }
     });
 
-    genImgInput.addEventListener('input', updateGeneratedUrl);
+    genImgInput.addEventListener('input', () => {
+      updateGeneratedUrl({ refreshPreview: true });
+    });
 
     genImgInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
@@ -1229,6 +1253,7 @@
 
     if (initialRid) {
       ridInput.value = initialRid.toUpperCase();
+      updateBrowserRidParam(initialRid.toUpperCase());
       loadVisits();
     } else {
       updateSortIndicators();
