@@ -59,11 +59,13 @@
 
     #ridInput {
       min-width: 280px;
+      text-transform: uppercase;
     }
 
     #genRidInput {
       flex: 0 0 180px;
       width: 180px;
+      text-transform: uppercase;
     }
 
     #genImgInput {
@@ -459,6 +461,8 @@
       pageSize: 10
     };
 
+    const generatedRidSet = new Set();
+
     function escapeHtml(value) {
       return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -820,6 +824,10 @@
       updatePaginationUI(totalItems);
     }
 
+    function syncRidFromGenerator(value) {
+      ridInput.value = String(value || '').toUpperCase();
+    }
+
     async function loadVisits() {
       const rid = ridInput.value.trim();
 
@@ -841,7 +849,6 @@
       nextUrl.searchParams.set('rid', rid);
       window.history.replaceState({}, '', nextUrl.toString());
 
-      genRidInput.value = rid;
       paginationState.page = 1;
 
       statusEl.textContent = 'Cargando...';
@@ -901,15 +908,24 @@
       renderTable();
     }
 
-    function normalizeImageUrl(value) {
-      let raw = String(value || '').trim();
+    function getImageValidationMessage() {
+      return 'La URL o imagen no es válida. Solo se admiten archivos .jpg, .png y .gif';
+    }
 
+    function extractFirstImageCandidate(value) {
+      const raw = String(value || '').trim();
       if (!raw) return '';
 
-      raw = raw.replace(/\s+/g, '');
+      const compact = raw.replace(/\s+/g, '');
+      const match = compact.match(/((https?:\/\/|\/\/)?[^"'<>]+?\.(jpg|png|gif))/i);
 
-      const firstUrlMatch = raw.match(/(https?:\/\/|\/\/)?[^\s]+/i);
-      raw = firstUrlMatch ? firstUrlMatch[0] : raw;
+      return match ? match[1] : '';
+    }
+
+    function normalizeImageUrl(value) {
+      let raw = extractFirstImageCandidate(value);
+
+      if (!raw) return '';
 
       if (raw.startsWith('//')) {
         raw = 'https:' + raw;
@@ -917,21 +933,13 @@
         raw = 'https://' + raw;
       }
 
-      const extraProtocolMatch = raw.slice(raw.indexOf('://') + 3).search(/https?:\/\//i);
-      if (extraProtocolMatch !== -1) {
-        raw = raw.slice(0, raw.indexOf('://') + 3 + extraProtocolMatch);
-      }
-
       try {
         const url = new URL(raw);
-        const pathname = url.pathname;
 
-        const imageMatch = pathname.match(/.*\.(jpg|png|gif)$/i);
-        if (!imageMatch) {
+        if (!/\.(jpg|png|gif)$/i.test(url.pathname)) {
           return '';
         }
 
-        url.pathname = imageMatch[0];
         return url.toString();
       } catch {
         return '';
@@ -949,8 +957,30 @@
       }
     }
 
-    function getImageValidationMessage() {
-      return 'La URL o imagen no es válida. Solo se admiten archivos .jpg, .png y .gif';
+    function generateRandomRid(length = 5) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let rid = '';
+
+      for (let i = 0; i < length; i += 1) {
+        rid += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      return rid;
+    }
+
+    function generateUniqueRid(length = 5, maxAttempts = 200) {
+      for (let i = 0; i < maxAttempts; i += 1) {
+        const rid = generateRandomRid(length);
+
+        if (!generatedRidSet.has(rid)) {
+          generatedRidSet.add(rid);
+          return rid;
+        }
+      }
+
+      const fallback = `${Date.now().toString(36).toUpperCase().slice(-5)}`;
+      generatedRidSet.add(fallback);
+      return fallback;
     }
 
     function resetImagePreview() {
@@ -1008,17 +1038,34 @@
       testImage.src = normalizedUrl;
     }
 
-    function generateTrackingUrl() {
-      const rid = genRidInput.value.trim();
+    function ensureAutoRidForValidImage() {
+      const hasValidImage = !!normalizeImageUrl(genImgInput.value);
+      const currentRid = genRidInput.value.trim();
+
+      if (!hasValidImage || currentRid) {
+        return;
+      }
+
+      const newRid = generateUniqueRid(5);
+      genRidInput.value = newRid;
+      syncRidFromGenerator(newRid);
+    }
+
+    function updateGeneratedUrl() {
+      const hasRawImage = genImgInput.value.trim() !== '';
       const img = normalizeImageUrl(genImgInput.value);
 
-      if (genImgInput.value.trim() && (!img || !isValidImageUrl(img))) {
-        genImgInput.value = '';
+      if (hasRawImage && (!img || !isValidImageUrl(img))) {
         generatedUrlInput.value = '';
         showPreviewMessage(getImageValidationMessage(), 'error');
         return;
       }
 
+      if (img) {
+        ensureAutoRidForValidImage();
+      }
+
+      const rid = genRidInput.value.trim();
       const baseUrl = `${window.location.origin}/api/i`;
       const params = new URLSearchParams();
 
@@ -1030,8 +1077,41 @@
         params.set('img', img);
       }
 
-      generatedUrlInput.value = `${baseUrl}?${params.toString()}`;
+      generatedUrlInput.value = params.toString()
+        ? `${baseUrl}?${params.toString()}`
+        : '';
+
       updateImagePreview();
+    }
+
+    function sanitizeImageInput() {
+      const rawValue = genImgInput.value.trim();
+
+      if (!rawValue) {
+        generatedUrlInput.value = '';
+        resetImagePreview();
+        updateGeneratedUrl();
+        return;
+      }
+
+      const normalized = normalizeImageUrl(rawValue);
+
+      if (!normalized || !isValidImageUrl(normalized)) {
+        genImgInput.value = '';
+        generatedUrlInput.value = '';
+        showPreviewMessage(getImageValidationMessage(), 'error');
+        return;
+      }
+
+      genImgInput.value = normalized;
+
+      if (!genRidInput.value.trim()) {
+        const newRid = generateUniqueRid(5);
+        genRidInput.value = newRid;
+        syncRidFromGenerator(newRid);
+      }
+
+      updateGeneratedUrl();
     }
 
     async function copyGeneratedUrl() {
@@ -1049,59 +1129,34 @@
       }
     });
 
-    generateBtn.addEventListener('click', generateTrackingUrl);
+    generateBtn.addEventListener('click', updateGeneratedUrl);
     copyGeneratedBtn.addEventListener('click', copyGeneratedUrl);
+
+    genRidInput.addEventListener('input', () => {
+      const value = genRidInput.value.trim().toUpperCase();
+      genRidInput.value = value;
+      syncRidFromGenerator(value);
+      updateGeneratedUrl();
+    });
 
     genRidInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
-        generateTrackingUrl();
+        updateGeneratedUrl();
       }
     });
+
+    genImgInput.addEventListener('input', updateGeneratedUrl);
 
     genImgInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
-        generateTrackingUrl();
+        sanitizeImageInput();
       }
     });
 
-    genImgInput.addEventListener('input', () => {
-      updateImagePreview();
-    });
-
-    genImgInput.addEventListener('blur', () => {
-      const normalized = normalizeImageUrl(genImgInput.value);
-
-      if (genImgInput.value.trim() && (!normalized || !isValidImageUrl(normalized))) {
-        genImgInput.value = '';
-        generatedUrlInput.value = '';
-        showPreviewMessage(getImageValidationMessage(), 'error');
-        return;
-      }
-
-      if (normalized) {
-        genImgInput.value = normalized;
-      }
-
-      updateImagePreview();
-    });
+    genImgInput.addEventListener('blur', sanitizeImageInput);
 
     genImgInput.addEventListener('paste', () => {
-      setTimeout(() => {
-        const normalized = normalizeImageUrl(genImgInput.value);
-
-        if (genImgInput.value.trim() && (!normalized || !isValidImageUrl(normalized))) {
-          genImgInput.value = '';
-          generatedUrlInput.value = '';
-          showPreviewMessage(getImageValidationMessage(), 'error');
-          return;
-        }
-
-        if (normalized) {
-          genImgInput.value = normalized;
-        }
-
-        updateImagePreview();
-      }, 0);
+      setTimeout(sanitizeImageInput, 0);
     });
 
     document.querySelectorAll('th[data-sort]').forEach((th) => {
@@ -1148,11 +1203,11 @@
     const initialRid = params.get('rid');
 
     if (initialRid) {
-      ridInput.value = initialRid;
-      genRidInput.value = initialRid;
+      ridInput.value = initialRid.toUpperCase();
       loadVisits();
     } else {
       updateSortIndicators();
+      updateGeneratedUrl();
     }
   </script>
 </body>
