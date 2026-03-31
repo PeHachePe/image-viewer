@@ -550,7 +550,7 @@
     const generatedRidSet = new Set();
     let lastRidGeneratedForImage = '';
     let lastPreviewUrl = '';
-    let lastAutoOpenedRid = '';
+    let lastOpenedRid = '';
 
     let tabs = [];
     let activeTabId = null;
@@ -1335,6 +1335,7 @@
         genRidInput.value = newRid;
         ridInput.value = newRid;
         lastRidGeneratedForImage = img;
+        lastOpenedRid = '';
         return true;
       }
 
@@ -1438,18 +1439,16 @@
       return !!(rid && (!hasRawImage || img));
     }
 
-    async function autoOpenSearchTabIfNeeded() {
+    async function openSearchTabIfNeeded() {
       const rid = genRidInput.value.trim().toUpperCase();
       const img = normalizeImageUrl(genImgInput.value);
 
       if (!rid) return;
       if (!img || !isValidImageUrl(img)) return;
       if (!generatedUrlInput.value.trim()) return;
+      if (lastOpenedRid === rid) return;
 
-      const signature = `${rid}|${img}`;
-      if (signature === lastAutoOpenedRid) return;
-
-      lastAutoOpenedRid = signature;
+      lastOpenedRid = rid;
       await loadVisitsByRid(rid);
     }
 
@@ -1458,7 +1457,7 @@
 
       if (!rawValue) {
         lastRidGeneratedForImage = '';
-        lastAutoOpenedRid = '';
+        lastOpenedRid = '';
         generatedUrlInput.value = '';
         resetImagePreview();
         updateGeneratedUrl();
@@ -1470,7 +1469,7 @@
       if (!normalized || !isValidImageUrl(normalized)) {
         genImgInput.value = '';
         lastRidGeneratedForImage = '';
-        lastAutoOpenedRid = '';
+        lastOpenedRid = '';
         generatedUrlInput.value = '';
         showPreviewMessage(getImageValidationMessage(), 'error');
         return false;
@@ -1479,12 +1478,7 @@
       genImgInput.value = normalized;
       regenerateRidForCurrentImage();
       ensureRidExists();
-      const isValid = updateGeneratedUrl({ refreshPreview: true });
-
-      if (isValid) {
-        await autoOpenSearchTabIfNeeded();
-      }
-
+      updateGeneratedUrl({ refreshPreview: true });
       return true;
     }
 
@@ -1505,15 +1499,12 @@
 
     copyGeneratedBtn.addEventListener('click', copyGeneratedUrl);
 
-    genRidInput.addEventListener('input', async () => {
+    genRidInput.addEventListener('input', () => {
       const value = genRidInput.value.toUpperCase().replace(/\s+/g, '');
       genRidInput.value = value;
       ridInput.value = value;
-      const isValid = updateGeneratedUrl();
-
-      if (isValid) {
-        await autoOpenSearchTabIfNeeded();
-      }
+      lastOpenedRid = '';
+      updateGeneratedUrl();
     });
 
     genRidInput.addEventListener('blur', async () => {
@@ -1521,7 +1512,7 @@
       const isValid = updateGeneratedUrl();
 
       if (isValid) {
-        await autoOpenSearchTabIfNeeded();
+        await openSearchTabIfNeeded();
       }
     });
 
@@ -1531,32 +1522,41 @@
         const isValid = updateGeneratedUrl();
 
         if (isValid) {
-          await autoOpenSearchTabIfNeeded();
+          await openSearchTabIfNeeded();
         }
       }
     });
 
-    genImgInput.addEventListener('input', async () => {
-      const isValid = updateGeneratedUrl({ refreshPreview: true });
-
-      if (isValid) {
-        await autoOpenSearchTabIfNeeded();
-      }
+    genImgInput.addEventListener('input', () => {
+      lastOpenedRid = '';
+      updateGeneratedUrl({ refreshPreview: true });
     });
 
     genImgInput.addEventListener('keydown', async (event) => {
       if (event.key === 'Enter') {
-        await sanitizeImageInput();
+        const isValid = await sanitizeImageInput();
+
+        if (isValid) {
+          await openSearchTabIfNeeded();
+        }
       }
     });
 
     genImgInput.addEventListener('blur', async () => {
-      await sanitizeImageInput();
+      const isValid = await sanitizeImageInput();
+
+      if (isValid) {
+        await openSearchTabIfNeeded();
+      }
     });
 
     genImgInput.addEventListener('paste', () => {
       setTimeout(async () => {
-        await sanitizeImageInput();
+        const isValid = await sanitizeImageInput();
+
+        if (isValid) {
+          await openSearchTabIfNeeded();
+        }
       }, 0);
     });
 
