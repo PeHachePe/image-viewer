@@ -120,7 +120,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      max-width: 240px;
+      max-width: 260px;
       padding: 8px 10px;
       border: 1px solid #444;
       border-radius: 999px;
@@ -635,6 +635,22 @@
       return direction === 'asc' ? result : -result;
     }
 
+    function sortVisits(visits) {
+      const sorted = [...visits].sort((a, b) =>
+        compareValues(a, b, sortState.key, sortState.direction)
+      );
+
+      return sorted.map((visit) => {
+        const children = Array.isArray(visit.children) ? [...visit.children] : [];
+        children.sort((a, b) => compareValues(a, b, sortState.key, sortState.direction));
+
+        return {
+          ...visit,
+          children
+        };
+      });
+    }
+
     function getTabById(tabId) {
       return tabs.find((tab) => tab.id === tabId) || null;
     }
@@ -702,7 +718,6 @@
       tabs.forEach((tab) => {
         const tabEl = document.createElement('div');
         tabEl.className = `search-tab${tab.id === activeTabId ? ' active' : ''}`;
-        tabEl.dataset.tabId = tab.id;
 
         const countText = tab.loading
           ? '...'
@@ -711,19 +726,17 @@
         tabEl.innerHTML = `
           <span class="search-tab-label" title="${escapeHtml(tab.rid)}">${escapeHtml(tab.rid)}</span>
           <span class="search-tab-count">${escapeHtml(countText)}</span>
-          <button class="search-tab-close" type="button" data-close-tab="${escapeHtml(tab.id)}" title="Cerrar">×</button>
+          <button class="search-tab-close" type="button" title="Cerrar">×</button>
         `;
 
         tabEl.addEventListener('click', (event) => {
-          if (event.target.closest('[data-close-tab]')) {
+          if (event.target.closest('.search-tab-close')) {
             return;
           }
-
           activateTab(tab.id);
         });
 
-        const closeBtn = tabEl.querySelector('[data-close-tab]');
-        closeBtn.addEventListener('click', (event) => {
+        tabEl.querySelector('.search-tab-close').addEventListener('click', (event) => {
           event.stopPropagation();
           closeTab(tab.id);
         });
@@ -1133,10 +1146,10 @@
       renderTabs();
     }
 
-    async function loadVisits() {
-      const rid = ridInput.value.trim().toUpperCase();
+    async function loadVisitsByRid(rid) {
+      const cleanRid = String(rid || '').trim().toUpperCase();
 
-      if (!rid) {
+      if (!cleanRid) {
         statusEl.textContent = 'Debes introducir un rid.';
         table.style.display = 'none';
         emptyState.style.display = 'block';
@@ -1145,8 +1158,10 @@
         return;
       }
 
-      const tab = createOrActivateTab(rid);
-      tab.rid = rid;
+      ridInput.value = cleanRid;
+
+      const tab = createOrActivateTab(cleanRid);
+      tab.rid = cleanRid;
       tab.loading = true;
       tab.loaded = false;
       tab.error = '';
@@ -1161,7 +1176,7 @@
       applyActiveTabToView();
 
       try {
-        const response = await fetch('/api/visits?rid=' + encodeURIComponent(rid));
+        const response = await fetch('/api/visits?rid=' + encodeURIComponent(cleanRid));
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
@@ -1193,6 +1208,10 @@
         renderTabs();
         updateBrowserTabsParams();
       }
+    }
+
+    async function loadVisits() {
+      return loadVisitsByRid(ridInput.value);
     }
 
     function handleSortClick(event) {
@@ -1427,7 +1446,7 @@
         generatedUrlInput.value = '';
         resetImagePreview();
         updateGeneratedUrl();
-        return;
+        return false;
       }
 
       const normalized = normalizeImageUrl(rawValue);
@@ -1437,13 +1456,14 @@
         lastRidGeneratedForImage = '';
         generatedUrlInput.value = '';
         showPreviewMessage(getImageValidationMessage(), 'error');
-        return;
+        return false;
       }
 
       genImgInput.value = normalized;
       regenerateRidForCurrentImage();
       ensureRidExists();
       updateGeneratedUrl({ refreshPreview: true });
+      return true;
     }
 
     async function copyGeneratedUrl() {
@@ -1461,12 +1481,18 @@
       }
     });
 
-    generateBtn.addEventListener('click', () => {
-      sanitizeImageInput();
+    generateBtn.addEventListener('click', async () => {
+      const isValid = sanitizeImageInput();
 
       if (!genImgInput.value.trim()) {
         ensureRidExists();
         updateGeneratedUrl();
+        await loadVisitsByRid(genRidInput.value);
+        return;
+      }
+
+      if (isValid && generatedUrlInput.value.trim()) {
+        await loadVisitsByRid(genRidInput.value);
       }
     });
 
@@ -1557,39 +1583,31 @@
       }
     });
 
-    const params = new URLSearchParams(window.location.search);
-    const initialRids = params.getAll('rid').map((rid) => rid.trim().toUpperCase()).filter(Boolean);
-    const initialActiveRid = (params.get('active') || '').trim().toUpperCase();
+    async function bootstrapTabsFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const initialRids = params.getAll('rid').map((rid) => rid.trim().toUpperCase()).filter(Boolean);
+      const initialActiveRid = (params.get('active') || '').trim().toUpperCase();
 
-    if (initialRids.length) {
-      initialRids.forEach((rid) => {
-        const tab = createTab(rid);
-        tab.loading = false;
-        tab.loaded = false;
-        tab.status = 'Pendiente de carga.';
-        tabs.push(tab);
-      });
+      if (!initialRids.length) {
+        updateSortIndicators();
+        updateGeneratedUrl();
+        renderTabs();
+        return;
+      }
 
-      const activeFromUrl = initialActiveRid && getTabByRid(initialActiveRid);
-      activeTabId = activeFromUrl ? activeFromUrl.id : tabs[0].id;
-      applyActiveTabToView();
+      for (const rid of initialRids) {
+        await loadVisitsByRid(rid);
+      }
 
-      const loads = initialRids.map(async (rid) => {
-        ridInput.value = rid;
-        await loadVisits();
-      });
-
-      Promise.all(loads).then(() => {
-        const activeTab = initialActiveRid ? getTabByRid(initialActiveRid) : tabs[0];
-        if (activeTab) {
-          activateTab(activeTab.id);
-        }
-      });
-    } else {
-      updateSortIndicators();
-      updateGeneratedUrl();
-      renderTabs();
+      const activeFromUrl = initialActiveRid ? getTabByRid(initialActiveRid) : null;
+      if (activeFromUrl) {
+        activateTab(activeFromUrl.id);
+      } else if (tabs.length) {
+        activateTab(tabs[0].id);
+      }
     }
+
+    bootstrapTabsFromUrl();
   </script>
 </body>
 </html>
