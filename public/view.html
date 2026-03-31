@@ -969,6 +969,10 @@
       }
     }
 
+    function getImageParamValue(url) {
+      return String(url || '').replace(/^https?:\/\//i, '');
+    }
+
     function generateRandomRid(length = 5) {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let rid = '';
@@ -1108,7 +1112,7 @@
       }
 
       if (img) {
-        params.set('img', img);
+        params.set('img', getImageParamValue(img));
       }
 
       generatedUrlInput.value = params.toString()
